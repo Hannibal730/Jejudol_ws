@@ -40,3 +40,7 @@ AMENT_IGNORE
 *.pt
 *.pth
 *.onnx
+
+# bag
+metadata.yaml
+*.db3
