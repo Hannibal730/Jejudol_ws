@@ -1,0 +1,160 @@
+csv_radius_detector_node:
+    ros__parameters:
+        # 관리할 탐지 영역들의 이름 목록
+        area_names: ["slope_stop", "reverse_T_trigger", "reverse_T_done", "reverse_parallel_trigger", "reverse_parallel_done", "intersection"]
+
+# -----------------------------------------------------------------
+
+        # # 노천 극장
+        csv_file_path: "/home/hannibal/Mandol_ws/data/processed/T_parallel_2.csv"   
+        # csv_file_path: "/home/hannibal/Mandol_ws/data/processed/Straight_S_1.csv"
+        slope_stop:
+            state_topic: "/slope_stop"
+            viz_topic: "mission/slope_stop"
+            x: 330182.316
+            y: 4156665.845
+            radius: 2.0
+        reverse_T_trigger:
+            state_topic: "/reverse_T/trigger"
+            viz_topic: "mission/reverse_T_trigger"
+            x: 330202.382
+            y: 4156670.524
+            radius: 2.5
+        reverse_T_done:
+            state_topic: "/reverse_T/done"
+            viz_topic: "mission/reverse_T_done"
+            x: 330200.018
+            y: 4156680.675
+            radius: 2.5
+        reverse_parallel_trigger:
+            state_topic: "/reverse_parallel/trigger"
+            viz_topic: "mission/reverse_parallel_trigger"
+            x: 330164.856
+            y: 4156672.286
+            radius: 1.5
+        reverse_parallel_done:
+            state_topic: "/reverse_parallel/done"
+            viz_topic: "mission/reverse_parallel_done"
+            x: 330166.002
+            y: 4156683.492
+            radius: 1.5
+        intersection:
+            state_topic: "/intersection"
+            viz_topic: "mission/intersection"
+            x: 330180.86
+            y: 4156675.01
+            radius: 4.0
+
+
+# -----------------------------------------------------------------
+
+
+
+# # 1~4 공통
+
+#         slope_stop:
+#             state_topic: "/slope_stop"
+#             viz_topic: "mission/slope_stop"
+#             x: 332221.91
+#             y: 4128617.98
+#             radius: 2.0
+#         reverse_T_trigger:
+#             state_topic: "/reverse_T/trigger"
+#             viz_topic: "mission/reverse_T_trigger"
+#             x: 332217.42
+#             y: 4128554.35
+#             radius: 1.5
+#         intersection:
+#             state_topic: "/intersection"
+#             viz_topic: "mission/intersection"
+#             x: 332217.92
+#             y: 4128581.37
+#             radius: 15.0
+
+
+# # 1. T자 오른쪽 진입, 평행 오른쪽 진입
+#         csv_file_path: "/home/hannibal/Mandol_ws/data/processed/1_T_right_P_right.csv"
+#         reverse_T_done:
+#             state_topic: "/reverse_T/done"
+#             viz_topic: "mission/reverse_T_done"
+#             x: 332227.40
+#             y: 4128556.87
+#             radius: 1.5
+#         reverse_parallel_trigger:
+#             state_topic: "/reverse_parallel/trigger"
+#             viz_topic: "mission/reverse_parallel_trigger"
+#             x: 332244.63
+#             y: 4128579.00
+#             radius: 1.5
+#         reverse_parallel_done:
+#             state_topic: "/reverse_parallel/done"
+#             viz_topic: "mission/reverse_parallel_done"
+#             x: 332249.09
+#             y: 4128577.25
+#             radius: 1.5
+
+
+# # 2. T자 오른쪽 진입, 평행 왼쪽 진입
+#         csv_file_path: "/home/hannibal/Mandol_ws/data/processed/2_T_right_P_left.csv"
+#         reverse_T_done:
+#             state_topic: "/reverse_T/done"
+#             viz_topic: "mission/reverse_T_done"
+#             x: 332227.40
+#             y: 4128556.87
+#             radius: 1.5
+#         reverse_parallel_trigger:
+#             state_topic: "/reverse_parallel/trigger"
+#             viz_topic: "mission/reverse_parallel_trigger"
+#             x: 332237.329
+#             y: 4128581.738
+#             radius: 1.5
+#         reverse_parallel_done:
+#             state_topic: "/reverse_parallel/done"
+#             viz_topic: "mission/reverse_parallel_done"
+#             x: 332241.553
+#             y: 4128580.178
+#             radius: 1.5
+
+
+
+# # 3. T자 왼쪽 진입, 평행 오른쪽 진입
+#         csv_file_path: "/home/hannibal/Mandol_ws/data/processed/3_T_left_P_right.csv"  
+#         reverse_T_done:
+#             state_topic: "/reverse_T/done"
+#             viz_topic: "mission/reverse_T_done"
+#             x: 332229.269
+#             y: 4128559.020
+#             radius: 1.5
+#         reverse_parallel_trigger:
+#             state_topic: "/reverse_parallel/trigger"
+#             viz_topic: "mission/reverse_parallel_trigger"
+#             x: 332244.63
+#             y: 4128579.00
+#             radius: 1.5
+#         reverse_parallel_done:
+#             state_topic: "/reverse_parallel/done"
+#             viz_topic: "mission/reverse_parallel_done"
+#             x: 332249.09
+#             y: 4128577.25
+#             radius: 1.5
+
+# # 4. T자 왼쪽 진입, 평행 왼쪽 진입
+#         csv_file_path: "/home/hannibal/Mandol_ws/data/processed/4_T_left_P_left.csv"  
+#         reverse_T_done:
+#             state_topic: "/reverse_T/done"
+#             viz_topic: "mission/reverse_T_done"
+#             x: 332229.269
+#             y: 4128559.020
+#             radius: 1.5
+#         reverse_parallel_trigger:
+#             state_topic: "/reverse_parallel/trigger"
+#             viz_topic: "mission/reverse_parallel_trigger"
+#             x: 332237.329
+#             y: 4128581.738
+#             radius: 1.5
+#         reverse_parallel_done:
+#             state_topic: "/reverse_parallel/done"
+#             viz_topic: "mission/reverse_parallel_done"
+#             x: 332241.553
+#             y: 4128580.178
+#             radius: 1.5
