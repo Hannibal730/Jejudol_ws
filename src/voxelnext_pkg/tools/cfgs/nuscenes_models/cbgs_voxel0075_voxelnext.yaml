@@ -1,0 +1,142 @@
+CLASS_NAMES: ['car','truck', 'construction_vehicle', 'bus', 'trailer',
+              'barrier', 'motorcycle', 'bicycle', 'pedestrian', 'traffic_cone']
+
+DATA_CONFIG:
+    _BASE_CONFIG_: "./tools/cfgs/dataset_configs/nuscenes_dataset.yaml"
+
+    # [Minimum X, Minimum Y, Minimum Z, Maximum X, Maximum Y, Maximum Z]
+    POINT_CLOUD_RANGE: [-54.0, -54.0, -5.0, 54.0, 54.0, 3.0]
+
+    INFO_PATH: {
+        'train': [nuscenes_infos_10sweeps_train.pkl],
+        'test': [nuscenes_infos_10sweeps_val.pkl],
+    }
+
+
+    # Role: Determines whether to remove points/boxes that fall outside the PointCloudRange.
+    DATA_PROCESSOR:
+        - NAME: mask_points_and_boxes_outside_range
+          REMOVE_OUTSIDE_BOXES: True
+
+        # Role: Determines whether to remove points/boxes that fall outside the PointCloudRange.
+        - NAME: shuffle_points
+          SHUFFLE_ENABLED: {
+            'train': False,
+            'test': False
+          }
+
+        # Role: Determines whether to remove points/boxes that fall outside the PointCloudRange.
+        - NAME: transform_points_to_voxels
+          VOXEL_SIZE: [0.05, 0.05, 0.2]
+
+        # Role: Determines whether to remove points/boxes that fall outside the PointCloudRange.
+          MAX_POINTS_PER_VOXEL: 10
+
+        # Role: Determines whether to remove points/boxes that fall outside the PointCloudRange.
+          MAX_NUMBER_OF_VOXELS: {
+            'train': 80000,
+            'test': 80000
+          }
+
+
+MODEL:
+    NAME: VoxelNeXt
+
+    VFE:
+        NAME: MeanVFE
+
+    BACKBONE_3D:
+        NAME: VoxelResBackBone8xVoxelNeXt
+
+    DENSE_HEAD:
+        NAME: VoxelNeXtHead
+        CLASS_AGNOSTIC: False
+        INPUT_FEATURES: 128
+
+        CLASS_NAMES_EACH_HEAD: [
+            ['car'], 
+            ['truck', 'construction_vehicle'],
+            ['bus', 'trailer'],
+            ['barrier'],
+            ['motorcycle', 'bicycle'],
+            ['pedestrian', 'traffic_cone'],
+        ]
+        
+        SHARED_CONV_CHANNEL: 128
+        KERNEL_SIZE_HEAD: 1
+        
+        USE_BIAS_BEFORE_NORM: True
+        NUM_HM_CONV: 2
+        SEPARATE_HEAD_CFG:
+            HEAD_ORDER: ['center', 'center_z', 'dim', 'rot', 'vel']
+            HEAD_DICT: {
+                'center': {'out_channels': 2, 'num_conv': 2},
+                'center_z': {'out_channels': 1, 'num_conv': 2},
+                'dim': {'out_channels': 3, 'num_conv': 2},
+                'rot': {'out_channels': 2, 'num_conv': 2},
+                'vel': {'out_channels': 2, 'num_conv': 2},
+            }
+
+        TARGET_ASSIGNER_CONFIG:
+            FEATURE_MAP_STRIDE: 8
+            NUM_MAX_OBJS: 100
+            GAUSSIAN_OVERLAP: 0.1
+            MIN_RADIUS: 2
+
+        LOSS_CONFIG:
+            LOSS_WEIGHTS: {
+                'cls_weight': 1.0,
+                'loc_weight': 0.25,
+                'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2, 1.0, 1.0]
+            }
+
+        # Within the DENSE_HEAD section:
+        POST_PROCESSING:
+
+            # SCORE_THRESH: Detections with a score below this threshold will be filtered out.
+            SCORE_THRESH: 0.6
+
+            # POST_CENTER_LIMIT_RANGE: Defines the 3D spatial limits (min and max coordinates) for the detected object centers.
+            POST_CENTER_LIMIT_RANGE: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
+
+            # MAX_OBJ_PER_SAMPLE: Maximum number of detected objects allowed per sample after post-processing.
+            MAX_OBJ_PER_SAMPLE: 100
+
+            # NMS_CONFIG: Configuration parameters for Non-Maximum Suppression (NMS), which removes redundant detections.
+            NMS_CONFIG:
+                NMS_TYPE: nms_gpu
+                NMS_THRESH: 0.05
+                NMS_PRE_MAXSIZE: 500
+                NMS_POST_MAXSIZE: 83
+
+    POST_PROCESSING:
+        RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+
+        # EVAL_METRIC: kitti
+        EVAL_METRIC: nuscenes
+
+
+
+
+
+
+OPTIMIZATION:
+    BATCH_SIZE_PER_GPU: 4
+    NUM_EPOCHS: 20
+
+    OPTIMIZER: adam_onecycle
+    LR: 0.001
+    WEIGHT_DECAY: 0.01
+    MOMENTUM: 0.9
+
+    MOMS: [0.95, 0.85]
+    PCT_START: 0.4
+    DIV_FACTOR: 10
+    DECAY_STEP_LIST: [35, 45]
+    LR_DECAY: 0.1
+    LR_CLIP: 0.0000001
+
+    LR_WARMUP: False
+    WARMUP_EPOCH: 1
+
+    GRAD_NORM_CLIP: 10

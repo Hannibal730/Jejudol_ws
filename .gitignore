@@ -44,3 +44,5 @@ AMENT_IGNORE
 # bag
 metadata.yaml
 *.db3
+
+.venv
