@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>voxelnext_pkg</name>
+  <name>voxelnext_ros2</name>
   <version>0.0.0</version>
-  <description>The voxelnext_pkg package</description>
+  <description>The voxelnext_ros2 package</description>
   <maintainer email="cds730@naver.com">hannibal</maintainer>
   <license>Apache 2.0</license>
 

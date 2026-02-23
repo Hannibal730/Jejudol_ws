@@ -3,10 +3,9 @@
 import sys
 import os
 
-# 로그 포맷 설정: 노드 이름([VoxelNeXt_center_object_detect]) 제거
+# 로그 포맷 설정: 노드 이름([VoxelNeXt_3D_object_detect]) 제거
 # os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '[{severity}] [{time}]: {message}'
 os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '[{severity}]: {message}'
-
 
 import rclpy
 from rclpy.node import Node
@@ -84,10 +83,9 @@ def pointcloud2_to_numpy(msg):
     points_with_timestamp = np.hstack((points, timestamp))
     
     return points_with_timestamp
-    
-class CenterObjectDetect(Node):
+class VoxelNeXt3DDetect(Node):
     def __init__(self):
-        super().__init__('VoxelNeXt_center_object_detect')
+        super().__init__('VoxelNeXt_3D_object_detect')
         # Get the directory of the current script
         script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -119,9 +117,9 @@ class CenterObjectDetect(Node):
         self.voxelnext_model.eval() # Set the model to evaluation mode
         self.get_logger().info("✅ VoxelNeXt model load completed")
 
-        # Create a ROS publisher for detected objects (center points markers)
-        self.pub_detected_centers = self.create_publisher(MarkerArray, '/detected_center', 10)
-        self.get_logger().info("✅ Publishers for /detected_center created")
+        # Create a ROS publisher for detected objects (bounding box markers)
+        self.pub_detected_objects = self.create_publisher(MarkerArray, '/detected_3D_Box', 10)
+        self.get_logger().info("✅ Publishers for /detected_3D_Box created")
 
         self.pub_detected_class   = self.create_publisher(MarkerArray, '/detected_class', 10)
         self.get_logger().info("✅ Publishers for /detected_class created")
@@ -134,13 +132,13 @@ class CenterObjectDetect(Node):
             1) # QoS profile 1 for compatibility with buff_size
         self.get_logger().info("✅ Subscriber for '/velodyne_points' created")
         self.get_logger().info("🚀 Now everything is ready. Run the rosbag file or launch the Velodyne LiDAR")
-
-        # Filtering Class for Autonomous Driving Competition
+        
+        # Filtering Class
         self.target_classes = ['traffic_cone']
 
     def lidar_callback(self, msg):
-        self.get_logger().info("-" * 23)
-        self.get_logger().info("Receiving LiDAR data.")
+        # self.get_logger().info("-" * 23)
+        # self.get_logger().info("Receiving LiDAR data.")
 
         try:
             points = pointcloud2_to_numpy(msg)
@@ -154,12 +152,12 @@ class CenterObjectDetect(Node):
 
         try:
             output_dicts = self.detect_objects(points, self.voxelnext_model, self.lidar_dataset)
-            self.publish_markers(output_dicts, self.pub_detected_centers, self.pub_detected_class, self.voxelnext_model.class_names)
+            self.publish_markers(output_dicts, self.pub_detected_objects, self.pub_detected_class, self.voxelnext_model.class_names)
         except Exception as e:
             self.get_logger().error(f"❌ Error during object detection/publishing: {e}")
 
     def detect_objects(self, points, voxelnext_model, lidar_dataset):
-        self.get_logger().info("Processing LiDAR data.")
+        # self.get_logger().info("Processing LiDAR data.")
         data_dict = {"points": points}
 
         # Perform point feature encoding
@@ -188,15 +186,15 @@ class CenterObjectDetect(Node):
             output_dicts, _ = voxelnext_model(batch_dict)
         return output_dicts
 
-    def publish_markers(self, output_dicts, pub_detected_centers, pub_detected_class, class_names):
+    def publish_markers(self, output_dicts, pub_detected_objects, pub_detected_class, class_names):
         # Check total number of detected objects
         total_objects = sum(len(output["pred_boxes"]) for output in output_dicts)
-        if total_objects == 0:
-            self.get_logger().info("🚫 No objects detected")
-        else:
-            self.get_logger().info("Publishing detected_center.")
+        # if total_objects == 0:
+            # self.get_logger().info("🚫 No objects detected")
+        # else:
+        #     self.get_logger().info("Publishing detected_3D_Box.")
 
-        center_markers = MarkerArray()
+        box_markers  = MarkerArray()
         text_markers = MarkerArray()
 
         # Optimization 1: Get timestamp once per frame (avoids system calls inside loop)
@@ -225,47 +223,55 @@ class CenterObjectDetect(Node):
                 label = int(pred_labels[j])
                 score = float(pred_scores[j])
 
-                # Extract center position and z_length for text offset
+                # Extract x, y and z box's informations
                 x_center = float(box[0])
                 y_center = float(box[1])
                 z_center = float(box[2])
+                x_length = float(box[3])
+                y_length = float(box[4])
                 z_length = float(box[5])
+                heading = float(box[6])
 
-                class_name = class_names[label - 1] # Adjust class label index
+                qz = math.sin(heading / 2.0)
+                qw = math.cos(heading / 2.0)
 
+                class_name = class_names[label - 1] # Adjust the class label index (assuming class indices start from 1)
+                
                 color = color_map.get(class_name, default_color)
-                self.get_logger().info(f"✅ Object {j+1},  Class: {class_name},  Score: {score:.2f},  Position: ({x_center:.2f}, {y_center:.2f}, {z_center:.2f})")
+                # self.get_logger().info(f"✅ Object {j+1},  Class: {class_name},  Score: {score:.2f},  Position: ({x_center:.2f}, {y_center:.2f}, {z_center:.2f})")
 
 
-                # 1. Create Center Point marker (SPHERE)
+                # 1. Create Box marker 
                 marker = Marker()
                 marker.header = Header()
                 marker.header.stamp = current_time
                 marker.header.frame_id = "velodyne"
-                marker.ns = "detected_center"
+                marker.ns = "detected_3D_Box"
                 marker.id = i * 1000 + j
-                marker.type = Marker.SPHERE
+                marker.type = Marker.CUBE
                 marker.action = Marker.ADD
 
                 marker.pose.position.x = x_center
                 marker.pose.position.y = y_center
-                # marker.pose.position.z = z_center
-                marker.pose.position.z = 0.0
-                marker.pose.orientation.w = 1.0 # No rotation needed for a sphere
+                marker.pose.position.z = z_center
+                marker.scale.x = x_length
+                marker.scale.y = y_length
+                marker.scale.z = z_length
 
-                marker.scale.x = 0.3
-                marker.scale.y = 0.3
-                marker.scale.z = 0.3
+                marker.pose.orientation.x = 0.0
+                marker.pose.orientation.y = 0.0
+                marker.pose.orientation.z = qz
+                marker.pose.orientation.w = qw
 
-                marker.color.a = 1.0
+                marker.color.a = 0.5
                 marker.color.r = float(color[0])
                 marker.color.g = float(color[1])
                 marker.color.b = float(color[2])
                 marker.lifetime = Duration(sec=0, nanosec=200000000)
-                center_markers.markers.append(marker)
+                box_markers.markers.append(marker)
 
 
-                # 2. # Create text marker
+                # 2. # Create txt marker 
                 text = Marker()
                 text.header = Header(stamp=current_time, frame_id="velodyne")
                 text.ns     = "detected_class"
@@ -285,19 +291,17 @@ class CenterObjectDetect(Node):
                 text_markers.markers.append(text)
 
         # publish two topics
-        pub_detected_centers.publish(center_markers)
+        pub_detected_objects.publish(box_markers)
         pub_detected_class.publish(text_markers)
-
-
 def main(args=None):
     rclpy.init(args=args)
-    center_object_detect_node = CenterObjectDetect()
+    voxelnext_3d_detect_node = VoxelNeXt3DDetect()
     try:
-        rclpy.spin(center_object_detect_node)
+        rclpy.spin(voxelnext_3d_detect_node)
     except KeyboardInterrupt:
         pass
     finally:
-        center_object_detect_node.destroy_node()
+        voxelnext_3d_detect_node.destroy_node()
         rclpy.shutdown()
 
 if __name__ == '__main__':

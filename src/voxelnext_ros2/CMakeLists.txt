@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(voxelnext_pkg)
+project(voxelnext_ros2)
 
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)

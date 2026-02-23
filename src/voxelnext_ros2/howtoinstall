@@ -1,0 +1,28 @@
+sudo apt update
+sudo apt install -y python3-venv python3-dev build-essential
+
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
+
+pip install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu118
+
+
+python -c "import torch; print('CUDA Available:', torch.cuda.is_available())"  (디버깅. -> "CUDA Available: True" 이라고 나와야 함.)
+
+
+pip install spconv-cu118 (사용자의 쿠다 환경에 맞춰서 설치. setup.py에서는 일부러 주석처리함.)
+
+export PYTHONNOUSERSITE=1 (가상환경이 아니라 ~/.local에 깔려 있던 다른 버전의 PyTorch가 아래의 빌드를 간섭하는 방지하고)
+
+
+pip install wheel setuptools  ( --no-build-isolation 옵션을 사용하여 패키지를 설치할 때는, 의존성 패키지(SharedArray)를 빌드하기 위한 도구들이 현재 가상환경(.venv)에 미리 설치되어 있어야 함.)
+pip install --upgrade pip setuptools wheel
+
+(cd/src/voxelnext_ros2 한 다음에) pip install -e . --no-build-isolation  (torch-cu118을 사용하여 빌드하도록 강제하여 setup.py의 pcdet 라이브러리(CUDA 확장 모듈 iou3d_nms_cuda 등)를 설치)
+
+
+(cd/src/voxelnext_ros2 한 다음에) pip install -r requirements.txt (이외의 라이브러리도 가상환경에 설치)
+
+pip install catkin_pkg lark
+pip install empy==3.3.4
+
