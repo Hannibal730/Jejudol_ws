@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>RRT_pkg</name>
+  <version>2.0.0</version>
+  <description>ROS2 migration of RRT-based path planning package.</description>
+
+  <maintainer email="maxim.yastremsky@egnition-hamburg.de">Maxim Yastremsky</maintainer>
+  <maintainer email="boing0806@gmail.com">Jeong Boin</maintainer>
+  <maintainer email="cds730@naver.com">Daeseung CHOI</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>vehicle_msgs</depend>
+
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-scipy</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
