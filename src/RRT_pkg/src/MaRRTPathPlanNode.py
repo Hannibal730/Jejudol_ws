@@ -37,7 +37,7 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('world_frame', 'velodyne')
         self.declare_parameter('desiredWaypointsFrequency', 5.0)
         self.declare_parameter('sample_frequency', 20.0)
-        self.declare_parameter('obstacle_topic', '/detected_center')
+        self.declare_parameter('obstacle_topic', '/voxelnext/detected_center')
         self.declare_parameter('rrt_target_topic', '/rrt/rrt_target')
 
         self.shouldPublishWaypoints = bool(self.get_parameter('publishWaypoints').value)

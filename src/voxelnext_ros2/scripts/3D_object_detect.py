@@ -118,11 +118,11 @@ class VoxelNeXt3DDetect(Node):
         self.get_logger().info("✅ VoxelNeXt model load completed")
 
         # Create a ROS publisher for detected objects (bounding box markers)
-        self.pub_detected_objects = self.create_publisher(MarkerArray, '/detected_3D_Box', 10)
-        self.get_logger().info("✅ Publishers for /detected_3D_Box created")
+        self.pub_detected_objects = self.create_publisher(MarkerArray, '/voxelnext/detected_3D_Box', 10)
+        self.get_logger().info("✅ Publishers for /voxelnext/detected_3D_Box created")
 
-        self.pub_detected_class   = self.create_publisher(MarkerArray, '/detected_class', 10)
-        self.get_logger().info("✅ Publishers for /detected_class created")
+        self.pub_detected_class   = self.create_publisher(MarkerArray, '/voxelnext/detected_class', 10)
+        self.get_logger().info("✅ Publishers for /voxelnext/detected_class created")
 
         # Create a ROS subscriber to receive PointCloud2 messages from the LiDAR sensor
         self.subscription = self.create_subscription(

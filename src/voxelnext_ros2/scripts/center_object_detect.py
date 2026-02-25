@@ -120,11 +120,11 @@ class CenterObjectDetect(Node):
         self.get_logger().info("✅ VoxelNeXt model load completed")
 
         # Create a ROS publisher for detected objects (center points markers)
-        self.pub_detected_centers = self.create_publisher(MarkerArray, '/detected_center', 10)
-        self.get_logger().info("✅ Publishers for /detected_center created")
+        self.pub_detected_centers = self.create_publisher(MarkerArray, '/voxelnext/detected_center', 10)
+        self.get_logger().info("✅ Publishers for /voxelnext/detected_center created")
 
-        self.pub_detected_class   = self.create_publisher(MarkerArray, '/detected_class', 10)
-        self.get_logger().info("✅ Publishers for /detected_class created")
+        self.pub_detected_class   = self.create_publisher(MarkerArray, '/voxelnext/detected_class', 10)
+        self.get_logger().info("✅ Publishers for /voxelnext/detected_class created")
 
         # Create a ROS subscriber to receive PointCloud2 messages from the LiDAR sensor
         self.subscription = self.create_subscription(
