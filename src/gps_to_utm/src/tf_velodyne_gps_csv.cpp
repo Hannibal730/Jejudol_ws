@@ -16,6 +16,7 @@
 #include <cmath> // For M_PI, sin, cos, radians
 #include <filesystem> // For std::filesystem::exists
 #include <algorithm> // For std::min, std::max
+#include <optional>
 
 /* 보간 없는 버전 ---------------------------- */
 
@@ -72,6 +73,10 @@ private:
     std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
     std::optional<double> origin_x_; // Using std::optional for nullable doubles
     std::optional<double> origin_y_;
+    std::optional<double> f9r_x_rel_;
+    std::optional<double> f9r_y_rel_;
+    std::optional<double> f9p_x_rel_;
+    std::optional<double> f9p_y_rel_;
     double current_yaw_radians_;
     nav_msgs::msg::Path path_msg_;
 
@@ -200,7 +205,10 @@ private:
         {
             return;
         }
+        f9r_x_rel_ = msg->point.x - origin_x_.value();
+        f9r_y_rel_ = msg->point.y - origin_y_.value();
         broadcast_transform(msg, "f9r");
+        broadcast_velodyne_if_ready();
     }
 
     void f9p_callback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
@@ -209,7 +217,10 @@ private:
         {
             return;
         }
+        f9p_x_rel_ = msg->point.x - origin_x_.value();
+        f9p_y_rel_ = msg->point.y - origin_y_.value();
         broadcast_transform(msg, "f9p");
+        broadcast_velodyne_if_ready();
     }
 
     void broadcast_transform(const geometry_msgs::msg::PointStamped::SharedPtr msg, const std::string& child_frame_id)
@@ -225,6 +236,34 @@ private:
         t.transform.translation.z = 0.0; // Assuming 2D for now
 
         // Apply the current yaw to the transform
+        tf2::Quaternion q = quaternion_from_euler(0, 0, current_yaw_radians_);
+        t.transform.rotation.x = q.x();
+        t.transform.rotation.y = q.y();
+        t.transform.rotation.z = q.z();
+        t.transform.rotation.w = q.w();
+
+        tf_broadcaster_->sendTransform(t);
+    }
+
+    void broadcast_velodyne_if_ready()
+    {
+        if (!f9r_x_rel_.has_value() || !f9r_y_rel_.has_value() ||
+            !f9p_x_rel_.has_value() || !f9p_y_rel_.has_value())
+        {
+            return;
+        }
+
+        geometry_msgs::msg::TransformStamped t;
+        t.header.stamp = this->get_clock()->now();
+        t.header.frame_id = "csv";
+        t.child_frame_id = "velodyne";
+
+        // Place velodyne at midpoint between f9r and f9p in csv frame.
+        t.transform.translation.x = 0.5 * (f9r_x_rel_.value() + f9p_x_rel_.value());
+        t.transform.translation.y = 0.5 * (f9r_y_rel_.value() + f9p_y_rel_.value());
+        t.transform.translation.z = 0.0;
+
+        // Apply yaw only (roll/pitch fixed to zero).
         tf2::Quaternion q = quaternion_from_euler(0, 0, current_yaw_radians_);
         t.transform.rotation.x = q.x();
         t.transform.rotation.y = q.y();

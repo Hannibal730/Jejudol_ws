@@ -46,7 +46,7 @@ target_include_directories(f9p_to_utm PUBLIC
 )
 
 # tf_gps_csv_node executable
-add_executable(tf_gps_csv_node src/tf_gps_csv.cpp)
+add_executable(tf_gps_csv_node src/tf_velodyne_gps_csv.cpp)
 ament_target_dependencies(tf_gps_csv_node rclcpp nav_msgs std_msgs geometry_msgs visualization_msgs tf2_ros tf2_geometry_msgs)
 target_include_directories(tf_gps_csv_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
