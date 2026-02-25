@@ -36,6 +36,8 @@ public:
     // ====== Parameters ======
     target_frame_      = this->declare_parameter<std::string>("target_frame", "f9r");   // /f9r_roi_path 시작점 선정 기준 프레임(기준 원점)
     csv_frame_         = this->declare_parameter<std::string>("csv_frame", "csv");      // CSV(UTM m) 프레임
+    roi_end_output_frame_ = this->declare_parameter<std::string>("roi_end_output_frame", "velodyne");
+    roi_end_point_topic_  = this->declare_parameter<std::string>("roi_end_point_topic", "/f9r_roi_end_velodyne");
     timer_frequency_   = this->declare_parameter<double>("timer_frequency", 20.0);
     roi_length_m_      = this->declare_parameter<double>("roi_length_m", 4.0);          // ROI 길이 [m]
     use_points_length_ = this->declare_parameter<bool>("use_points_length", false);     // ROI 길이를 포인트 개수로 자를지 여부. 만약 false면 자동으로 roi_length_m 사용
@@ -60,6 +62,7 @@ public:
     auto qos_tl = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
     roi_path_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/f9r_roi_path", qos_tl);
     roi_end_pub_  = this->create_publisher<visualization_msgs::msg::Marker>("/f9r_roi_end",  qos_tl);
+    roi_end_point_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(roi_end_point_topic_, qos_tl);
 
     // ====== Timer ======
     timer_ = this->create_wall_timer(
@@ -67,8 +70,9 @@ public:
       std::bind(&ROIPathPublisher::timerCallback, this));
 
     RCLCPP_INFO(this->get_logger(),
-      "[f9r_roi_path] csv_frame=%s, target=%s, freq=%.1f Hz, ROI=%.2f %s, search_span_pts=%d",
-      csv_frame_.c_str(), target_frame_.c_str(), timer_frequency_,
+      "[f9r_roi_path] csv_frame=%s, target=%s, roi_end_out=%s(%s), freq=%.1f Hz, ROI=%.2f %s, search_span_pts=%d",
+      csv_frame_.c_str(), target_frame_.c_str(),
+      roi_end_output_frame_.c_str(), roi_end_point_topic_.c_str(), timer_frequency_,
       use_points_length_ ? (double)roi_length_pts_ : roi_length_m_,
       use_points_length_ ? "pts" : "m", search_span_pts_);
   }
@@ -226,6 +230,7 @@ private:
     // ====== Publish ======
     publishPathMarker(start_idx, end_idx, csv_local);
     publishEndMarker(end_idx, csv_local);
+    publishEndPointInOutputFrame(end_idx, csv_local);
 
     // ====== 상태 커밋 ======
     {
@@ -298,6 +303,35 @@ private:
     roi_end_pub_->publish(m);
   }
 
+  void publishEndPointInOutputFrame(size_t idx, const std::vector<Pt>& csv_pts)
+  {
+    if (idx >= csv_pts.size()) return;
+
+    geometry_msgs::msg::PointStamped end_in_csv;
+    end_in_csv.header.frame_id = csv_frame_;
+    end_in_csv.header.stamp = this->get_clock()->now();
+    end_in_csv.point.x = csv_pts[idx].x;
+    end_in_csv.point.y = csv_pts[idx].y;
+    end_in_csv.point.z = 0.0;
+
+    if (roi_end_output_frame_ == csv_frame_) {
+      roi_end_point_pub_->publish(end_in_csv);
+      return;
+    }
+
+    geometry_msgs::msg::PointStamped end_in_output;
+    try {
+      tf_buffer_.transform(end_in_csv, end_in_output, roi_end_output_frame_, tf2::durationFromSec(0.1));
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                           "TF transform %s->%s failed for ROI end point: %s",
+                           csv_frame_.c_str(), roi_end_output_frame_.c_str(), ex.what());
+      return;
+    }
+
+    roi_end_point_pub_->publish(end_in_output);
+  }
+
 private:
   // ====== TF ======
   tf2_ros::Buffer tf_buffer_;
@@ -306,6 +340,8 @@ private:
   // ====== Params ======
   std::string target_frame_;
   std::string csv_frame_;
+  std::string roi_end_output_frame_;
+  std::string roi_end_point_topic_;
   double timer_frequency_;
   double roi_length_m_;
   bool   use_points_length_;
@@ -328,6 +364,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr sub_fix_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr roi_path_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr roi_end_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr roi_end_point_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

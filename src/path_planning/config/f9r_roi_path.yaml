@@ -2,6 +2,8 @@ f9r_roi_path:
     ros__parameters:
         target_frame: "f9r"
         csv_frame: "csv"
+        roi_end_output_frame: "velodyne"
+        roi_end_point_topic: "/f9r_roi_end_velodyne"
         timer_frequency: 20.0
         roi_length_m: 4.0
         use_points_length: false

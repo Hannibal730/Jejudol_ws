@@ -20,7 +20,7 @@ from rclpy.node import Node
 from builtin_interfaces.msg import Duration
 from vehicle_msgs.msg import TrackCone, Waypoint, WaypointsArray
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, PointStamped
 from nav_msgs.msg import Odometry
 from scipy.spatial import Delaunay
 
@@ -38,7 +38,7 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('desiredWaypointsFrequency', 5.0)
         self.declare_parameter('sample_frequency', 20.0)
         self.declare_parameter('obstacle_topic', '/voxelnext/detected_center')
-        self.declare_parameter('rrt_target_topic', '/rrt/rrt_target')
+        self.declare_parameter('roi_end_topic', '/f9r_roi_end_velodyne')
 
         self.shouldPublishWaypoints = bool(self.get_parameter('publishWaypoints').value)
         self.shouldPublishPredefined = bool(self.get_parameter('publishPredefined').value)
@@ -47,7 +47,7 @@ class MaRRTPathPlanNode(Node):
         self.odometry_topic = str(self.get_parameter('odom_topic').value)
         self.world_frame = str(self.get_parameter('world_frame').value)
         self.obstacle_topic = str(self.get_parameter('obstacle_topic').value)
-        self.rrt_target_topic = str(self.get_parameter('rrt_target_topic').value)
+        self.roi_end_topic = str(self.get_parameter('roi_end_topic').value)
 
         waypointsFrequency = float(self.get_parameter('desiredWaypointsFrequency').value)
         if waypointsFrequency <= 0.0:
@@ -78,21 +78,18 @@ class MaRRTPathPlanNode(Node):
             10
         )
 
-        # RRT 입력 목표점(MarkerArray) 구독 + 같은 토픽으로 시각화 재사용
-        self.rrt_target_sub = self.create_subscription(
-            MarkerArray,
-            self.rrt_target_topic,
-            self.rrtTargetCallback,
+        # /f9r_roi_end_velodyne (PointStamped, velodyne frame) 구독 -> RRT 목표점으로 사용
+        self.roi_end_sub = self.create_subscription(
+            PointStamped,
+            self.roi_end_topic,
+            self.roiEndCallback,
             10
         )
-        self.rrt_target = None  # 수신한 목표 좌표 저장
+        self.rrt_target = None  # 현재 사용 중인 목표 좌표 저장
 
         """
         퍼블리셔들
         """
-        # rrt 목표점 입력/시각화 통합 토픽
-        self.rrtTargetVisualPub = self.create_publisher(MarkerArray, self.rrt_target_topic, 1)
-
         self.waypointsPub = self.create_publisher(WaypointsArray, '/waypoints', 10)
         self.newwaypointsPub = self.create_publisher(WaypointsArray, '/newwaypoints', 10)
 
@@ -117,11 +114,13 @@ class MaRRTPathPlanNode(Node):
         self.rrt = None
         self.filteredBestBranch = []
         self.discardAmount = 0
+        self.latest_roi_end_point = None
+        self.last_roi_warn_time = 0.0
 
         self.sample_timer = self.create_timer(1.0 / sample_frequency, self.sampleTree)
 
         self.get_logger().info(
-            f'Subscribed obstacle centers from {self.obstacle_topic}, running planner at {sample_frequency:.1f} Hz'
+            f'Subscribed obstacle centers from {self.obstacle_topic}, ROI goal from {self.roi_end_topic}, running planner at {sample_frequency:.1f} Hz'
         )
 
     def _now(self):
@@ -183,13 +182,31 @@ class MaRRTPathPlanNode(Node):
             markerArray.markers.append(marker)
         self.obstacleVisualPub.publish(markerArray)
 
-    def rrtTargetCallback(self, msg):
-        # /rrt/rrt_target MarkerArray에서 첫 번째 마커의 좌표를 RRT 입력 목표점으로 사용
-        if not msg.markers:
-            return
+    def roiEndCallback(self, marker):
+        self.latest_roi_end_point = marker
 
-        marker = msg.markers[0]
-        self.rrt_target = self._point(marker.pose.position.x, marker.pose.position.y, 0.0)
+    def _warn_roi_throttle(self, message, period_sec=2.0):
+        now = time.time()
+        if (now - self.last_roi_warn_time) >= period_sec:
+            self.get_logger().warn(message)
+            self.last_roi_warn_time = now
+
+    def resolveRoiEndTarget(self):
+        point_msg = self.latest_roi_end_point
+        if point_msg is None:
+            return None
+
+        if not point_msg.header.frame_id:
+            self._warn_roi_throttle(f'{self.roi_end_topic} has empty frame_id.')
+            return None
+
+        if point_msg.header.frame_id != self.world_frame:
+            self._warn_roi_throttle(
+                f'{self.roi_end_topic} frame mismatch: got {point_msg.header.frame_id}, expected {self.world_frame}.'
+            )
+            return None
+
+        return self._point(point_msg.point.x, point_msg.point.y, 0.0)
 
     def odometryCallback(self, odometry):
         # # /odometry 토픽으로부터 받은 Odometry 메시지를 이용하여 차량 위치 업데이트
@@ -246,40 +263,38 @@ class MaRRTPathPlanNode(Node):
         rrtTarget = []
         targetRadius = 0.1  # 원하는 보수적인 rrt_target 반경 값
                 
-        if self.rrt_target is not None:
-            rrtTarget.append((self.rrt_target.x, self.rrt_target.y, targetRadius))
-            self.get_logger().info(f'{self.rrt_target_topic}: ({self.rrt_target.x:.2f}, {self.rrt_target.y:.2f})')
-            marker = Marker()
-            marker.header.stamp = self._now()
-            marker.header.frame_id = self.world_frame
-            marker.ns = "rrt_target"
-            marker.id = 0
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
-            marker.scale.x = 1.3
-            marker.scale.y = 1.3
-            marker.scale.z = 1.3
-            marker.color.a = 1.0
-            marker.color.r = 1.0
-            marker.color.g = 0.0
-            marker.color.b = 1.0
-            marker.pose.position.x = self.rrt_target.x
-            marker.pose.position.y = self.rrt_target.y
-            marker.pose.position.z = 0.0
-            marker.pose.orientation.w = 1.0
-            self.rrtTargetVisualPub.publish(self._single_marker_array(marker))
+        roi_target = self.resolveRoiEndTarget()
+        if roi_target is not None:
+            self.rrt_target = roi_target
+            rrtTarget.append((roi_target.x, roi_target.y, targetRadius))
+            self.get_logger().info(
+                f'[RRT target] source=ROI frame={self.world_frame} '
+                f'pos=({roi_target.x:.2f}, {roi_target.y:.2f})'
+            )
             
             
             
         
         # 수신 못 했다면 기존처럼 멀리 있는 콘들을 목표점으로 함    
         else:
+            self.rrt_target = None
             # self.rrt_target이 없는 경우, frontCones 리스트에서 조건에 맞는 콘을 선택
+            fallback_found = False
             for cone in frontCones:
                 coneDist = self.dist(self.carPosX, self.carPosY, cone.x, cone.y)
                 if coneDist > 6:
                     rrtTarget.append((cone.x, cone.y, coneObstacleSize))
+                    self.get_logger().info(
+                        f'[RRT target] source=CONE_FALLBACK frame={self.world_frame} '
+                        f'pos=({cone.x:.2f}, {cone.y:.2f}), dist={coneDist:.2f}m'
+                    )
+                    fallback_found = True
                     break  # 조건에 맞는 콘을 하나 찾으면 반복문 종료
+
+            if not fallback_found:
+                self.get_logger().warn(
+                    '[RRT target] source=NONE no ROI target and no fallback cone candidate (dist > 6m).'
+                )
 
             
         """트리 파라미터 조정 구간"""                
