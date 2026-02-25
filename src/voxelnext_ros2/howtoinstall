@@ -2,28 +2,25 @@ sudo apt update
 sudo apt install -y python3-venv python3-dev build-essential
 
 python3 -m venv .venv --system-site-packages
-source .venv/bin/activate
-export PYTHONNOUSERSITE=1
+source .venv/bin/activate   (이때는 ros 꺼진 상태로 하는 게 안전)
+pip install --ignore-installed colcon-common-extensions "empy==3.3.4"
 
-python -m pip install --upgrade pip setuptools wheel
-
+export PYTHONNOUSERSITE=1   (이건 오직 '시스템 기본 패키지'와 '현재 활성화된 가상환경/ROS 워크스페이스 패키지'만 깔끔하게 바라보게 해주는 명령어라서, 여기선 venv만 바라보게 해줌. cbr에 저걸 박아뒀지만, cbr말고 다른 빌드가 필요한 복셀을 위해서 명시.)
+python3 -m pip install --upgrade pip wheel "setuptools<80"
 python -m pip install torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.1 --index-url https://download.pytorch.org/whl/cu118
 python -c "import torch; print(torch.__version__, torch.__file__); print('CUDA Available:', torch.cuda.is_available())"
-
 python -m pip install spconv-cu118
+
 
 cd src/voxelnext_ros2
 python -m pip install -r requirements.txt
-python -m pip install catkin_pkg lark empy==3.3.4
 python -m pip install "coverage>=7,<8"
 python -m pip install -e . --no-build-isolation
 
-# 참고:
-# 1) numpy는 requirements/setup.py에서 numpy<2로 고정되어 있어야 SharedArray ABI 충돌을 피할 수 있음.
-# 2) 설치 중 --force-reinstall 사용 시 pip resolver가 numpy 2.x로 올릴 수 있으니 필요한 경우에만 사용.
-# 3) 복구가 필요하면:
-#    python -m pip install --force-reinstall "numpy<2"
-#    python -m pip install --force-reinstall --no-deps SharedArray==3.2.4
-# 4) --system-site-packages를 쓰면 시스템 coverage(예: 6.2)가 보일 수 있음.
-#    numba 0.64와 충돌하면 아래로 덮어쓰기:
-#    python -m pip install --upgrade "coverage>=7,<8"
+
+
+
+; alias cb='PYTHONNOUSERSITE=1 colcon build --symlink-install --cmake-args -DPython3_EXECUTABLE=$(which python)'
+; alias cbr='PYTHONNOUSERSITE=1 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DPython3_EXECUTABLE=$(which python)'
+
+
