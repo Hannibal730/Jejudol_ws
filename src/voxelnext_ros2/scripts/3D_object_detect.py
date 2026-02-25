@@ -11,6 +11,8 @@ import rclpy
 from rclpy.node import Node
 import torch
 import numpy as np
+import queue
+import threading
 from sensor_msgs.msg import PointCloud2, PointField
 from visualization_msgs.msg import MarkerArray, Marker
 from std_msgs.msg import Header
@@ -30,7 +32,7 @@ from builtin_interfaces.msg import Duration
 # -------------------------
 color_map = {
     'car': [1, 0.5, 0.5], # Light Red
-    'truck': [0, 1, 0], # Green
+    'truck': [1, 0, 0], 
     'construction_vehicle': [0, 0, 1], # Blue
     'bus': [1, 1, 0], # Yellow
     'trailer': [1, 0, 1], # Magenta
@@ -38,7 +40,7 @@ color_map = {
     'motorcycle': [0.5, 0.5, 0.5], # Gray
     'bicycle': [1, 0.5, 0], # Orange
     'pedestrian': [0.5, 0, 0.5], # Purple
-    'traffic_cone': [1, 0, 0],  # 빨강
+    'traffic_cone': [0, 1, 0]  
 }
 default_color = [0, 0, 0]   # Default: Black
 
@@ -136,25 +138,75 @@ class VoxelNeXt3DDetect(Node):
         # Filtering Class
         self.target_classes = ['traffic_cone']
 
+        # Keep only the latest frame to avoid latency accumulation.
+        self.frame_queue = queue.Queue(maxsize=1)
+        self.worker_running = True
+        self.inference_thread = threading.Thread(target=self.inference_worker, daemon=True)
+        self.inference_thread.start()
+
     def lidar_callback(self, msg):
-        # self.get_logger().info("-" * 23)
-        # self.get_logger().info("Receiving LiDAR data.")
+        self.enqueue_latest_frame(msg)
+
+    def enqueue_latest_frame(self, msg):
+        # Drop stale frame when queue is full so inference always uses latest data.
+        if self.frame_queue.full():
+            try:
+                self.frame_queue.get_nowait()
+            except queue.Empty:
+                pass
 
         try:
-            points = pointcloud2_to_numpy(msg)
-        except Exception as e:
-            self.get_logger().error(f"❌ Error converting PointCloud2: {e}")
-            return
+            self.frame_queue.put_nowait(msg)
+        except queue.Full:
+            # Another thread may have filled the queue between full() and put_nowait().
+            pass
 
-        if points.shape[1] != 5:
-            self.get_logger().warn(f"❌ Incorrect point format! Expected (N,5), got: {points.shape}")
-            return
+    def inference_worker(self):
+        while self.worker_running and rclpy.ok():
+            try:
+                msg = self.frame_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
 
+            if msg is None:
+                break
+
+            try:
+                points = pointcloud2_to_numpy(msg)
+                if points.shape[1] != 5:
+                    self.get_logger().warn(f"❌ Incorrect point format! Expected (N,5), got: {points.shape}")
+                    continue
+
+                output_dicts = self.detect_objects(points, self.voxelnext_model, self.lidar_dataset)
+                self.publish_markers(
+                    output_dicts,
+                    self.pub_detected_objects,
+                    self.pub_detected_class,
+                    self.voxelnext_model.class_names
+                )
+            except Exception as e:
+                self.get_logger().error(f"❌ Error during object detection/publishing: {e}")
+
+    def destroy_node(self):
+        self.worker_running = False
+
+        # Wake up worker thread if it is waiting on queue.get().
         try:
-            output_dicts = self.detect_objects(points, self.voxelnext_model, self.lidar_dataset)
-            self.publish_markers(output_dicts, self.pub_detected_objects, self.pub_detected_class, self.voxelnext_model.class_names)
-        except Exception as e:
-            self.get_logger().error(f"❌ Error during object detection/publishing: {e}")
+            self.frame_queue.put_nowait(None)
+        except queue.Full:
+            try:
+                self.frame_queue.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self.frame_queue.put_nowait(None)
+            except queue.Full:
+                pass
+
+        if hasattr(self, 'inference_thread') and self.inference_thread.is_alive():
+            self.inference_thread.join(timeout=1.0)
+
+        return super().destroy_node()
 
     def detect_objects(self, points, voxelnext_model, lidar_dataset):
         # self.get_logger().info("Processing LiDAR data.")
