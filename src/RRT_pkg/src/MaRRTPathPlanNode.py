@@ -268,7 +268,7 @@ class MaRRTPathPlanNode(Node):
             self.rrt_target = roi_target
             rrtTarget.append((roi_target.x, roi_target.y, targetRadius))
             self.get_logger().info(
-                f'[RRT target] source=ROI frame={self.world_frame} '
+                f'[RRT target] f9r_roi_end frame={self.world_frame} '
                 f'pos=({roi_target.x:.2f}, {roi_target.y:.2f})'
             )
             
@@ -285,7 +285,7 @@ class MaRRTPathPlanNode(Node):
                 if coneDist > 6:
                     rrtTarget.append((cone.x, cone.y, coneObstacleSize))
                     self.get_logger().info(
-                        f'[RRT target] source=CONE_FALLBACK frame={self.world_frame} '
+                        f'[RRT target] cone_fallback frame={self.world_frame} '
                         f'pos=({cone.x:.2f}, {cone.y:.2f}), dist={coneDist:.2f}m'
                     )
                     fallback_found = True
