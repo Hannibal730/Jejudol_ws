@@ -39,6 +39,7 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('sample_frequency', 20.0)
         self.declare_parameter('obstacle_topic', '/vn/lidar_cone')
         self.declare_parameter('roi_end_topic', '/f9r_roi_end_velodyne')
+        self.declare_parameter('rrt_target_visual_topic', '/rrt/rrt_target')
 
         self.shouldPublishWaypoints = bool(self.get_parameter('publishWaypoints').value)
         self.shouldPublishPredefined = bool(self.get_parameter('publishPredefined').value)
@@ -48,6 +49,7 @@ class MaRRTPathPlanNode(Node):
         self.world_frame = str(self.get_parameter('world_frame').value)
         self.obstacle_topic = str(self.get_parameter('obstacle_topic').value)
         self.roi_end_topic = str(self.get_parameter('roi_end_topic').value)
+        self.rrt_target_visual_topic = str(self.get_parameter('rrt_target_visual_topic').value)
 
         waypointsFrequency = float(self.get_parameter('desiredWaypointsFrequency').value)
         if waypointsFrequency <= 0.0:
@@ -99,6 +101,7 @@ class MaRRTPathPlanNode(Node):
         self.delaunayLinesVisualPub = self.create_publisher(MarkerArray, '/rrt/delauny_triangles', 10)
         self.waypointsVisualPub = self.create_publisher(MarkerArray, '/rrt/waypoints', 10)
         self.obstacleVisualPub = self.create_publisher(MarkerArray, '/rrt/obstacle_radius', 10)
+        self.rrtTargetVisualPub = self.create_publisher(MarkerArray, self.rrt_target_visual_topic, 10)
 
 
         
@@ -182,6 +185,37 @@ class MaRRTPathPlanNode(Node):
             markerArray.markers.append(marker)
         self.obstacleVisualPub.publish(markerArray)
 
+    def publishRrtTargetVisual(self, target_point):
+        marker = Marker()
+        marker.header.frame_id = self.world_frame
+        marker.header.stamp = self._now()
+        marker.ns = "rrt_target"
+        marker.id = 0
+
+        if target_point is None:
+            marker.action = Marker.DELETE
+            self.rrtTargetVisualPub.publish(self._single_marker_array(marker))
+            return
+
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = float(target_point.x)
+        marker.pose.position.y = float(target_point.y)
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.w = 1.0
+
+        marker.scale.x = 0.5
+        marker.scale.y = 0.5
+        marker.scale.z = 0.5
+
+        marker.color.a = 1.0
+        marker.color.r = 0.5
+        marker.color.g = 0.2
+        marker.color.b = 0.7
+        marker.lifetime = self._duration(0.3)
+
+        self.rrtTargetVisualPub.publish(self._single_marker_array(marker))
+
     def roiEndCallback(self, marker):
         self.latest_roi_end_point = marker
 
@@ -235,10 +269,14 @@ class MaRRTPathPlanNode(Node):
                 
         
         if self.loopClosure and len(self.savedWaypoints) > 0:
+            self.rrt_target = None
+            self.publishRrtTargetVisual(None)
             self.publishWaypoints()
             return
 
         if not self.map:
+            self.rrt_target = None
+            self.publishRrtTargetVisual(None)
             return
 
         frontConesDist = 12
@@ -283,6 +321,7 @@ class MaRRTPathPlanNode(Node):
             for cone in frontCones:
                 coneDist = self.dist(self.carPosX, self.carPosY, cone.x, cone.y)
                 if coneDist > 6:
+                    self.rrt_target = self._point(cone.x, cone.y, 0.0)
                     rrtTarget.append((cone.x, cone.y, coneObstacleSize))
                     self.get_logger().info(
                         f'[RRT target] cone_fallback frame={self.world_frame} '
@@ -295,6 +334,8 @@ class MaRRTPathPlanNode(Node):
                 self.get_logger().warn(
                     '[RRT target] source=NONE no ROI target and no fallback cone candidate (dist > 6m).'
                 )
+
+        self.publishRrtTargetVisual(self.rrt_target)
 
             
         """트리 파라미터 조정 구간"""                
@@ -634,11 +675,11 @@ class MaRRTPathPlanNode(Node):
 
         marker.type = marker.LINE_LIST
         marker.action = marker.ADD
-        marker.scale.x = 0.05
+        marker.scale.x = 0.035
 
         marker.pose.orientation.w = 1.0
 
-        marker.color.a = 1.0
+        marker.color.a = 0.8
         marker.color.r = 1.0
         marker.color.b = 1.0
 
