@@ -27,7 +27,7 @@ class LiveLidarDataset:
             coors_range_xyz=self.dataset_cfg.POINT_CLOUD_RANGE,          # Point cloud range
             num_point_features=len(self.point_feature_encoding['used_feature_list']),
             max_num_points_per_voxel=self.dataset_cfg.DATA_PROCESSOR[2]['MAX_POINTS_PER_VOXEL'],  # Max points per voxel
-            max_num_voxels=self.dataset_cfg.DATA_PROCESSOR[2]['MAX_NUMBER_OF_VOXELS']['train']  # Max number of voxels
+            max_num_voxels=self.dataset_cfg.DATA_PROCESSOR[2]['MAX_NUMBER_OF_VOXELS']['test']  # Max number of voxels
         )
         
         # Print the added attributes

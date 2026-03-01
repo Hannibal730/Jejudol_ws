@@ -17,8 +17,8 @@ python -m pip install -r requirements.txt
 python -m pip install "coverage>=7,<8"
 python -m pip install -e . --no-build-isolation
 
-
-
+python -m pip install backports.tarfile
+python -m pip install setuptools==68.2.2
 
 ; alias cb='PYTHONNOUSERSITE=1 colcon build --symlink-install --cmake-args -DPython3_EXECUTABLE=$(which python)'
 ; alias cbr='PYTHONNOUSERSITE=1 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DPython3_EXECUTABLE=$(which python)'
