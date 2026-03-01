@@ -192,6 +192,11 @@ class VoxelNeXt3DDetect(Node):
         
         # Filtering Class
         self.target_classes = ['traffic_cone']
+        self.target_label_indices = [
+            idx + 1 for idx, class_name in enumerate(self.voxelnext_model.class_names)
+            if class_name in set(self.target_classes)
+        ]
+        self._target_label_tensors = {}
 
         # Keep only the latest frame to avoid latency accumulation.
         self.frame_queue = queue.Queue(maxsize=1)
@@ -293,6 +298,17 @@ class VoxelNeXt3DDetect(Node):
             output_dicts, _ = voxelnext_model(batch_dict)
         return output_dicts
 
+    def get_target_label_tensor(self, device):
+        if len(self.target_label_indices) == 0:
+            return None
+
+        key = str(device)
+        tensor = self._target_label_tensors.get(key)
+        if tensor is None:
+            tensor = torch.tensor(self.target_label_indices, dtype=torch.long, device=device)
+            self._target_label_tensors[key] = tensor
+        return tensor
+
     def publish_markers(self, output_dicts, pub_detected_objects, pub_detected_class, class_names):
         # Check total number of detected objects
         total_objects = sum(len(output["pred_boxes"]) for output in output_dicts)
@@ -307,23 +323,26 @@ class VoxelNeXt3DDetect(Node):
         # Optimization 1: Get timestamp once per frame (avoids system calls inside loop)
         current_time = self.get_clock().now().to_msg()
 
-        # Optimization 2: Pre-calculate target label indices for vector filtering
-        target_indices = [class_names.index(c) + 1 for c in self.target_classes if c in class_names]
-
         for i, output in enumerate(output_dicts):
-            # Optimization: Move tensors to CPU and convert to NumPy once before iterating
-            # Calling .cpu().item() inside a loop causes severe GPU-CPU synchronization overhead.
-            pred_boxes = output["pred_boxes"].cpu().numpy()
-            pred_labels = output["pred_labels"].cpu().numpy()
-            pred_scores = output["pred_scores"].cpu().numpy()
+            pred_boxes_t = output["pred_boxes"]
+            pred_labels_t = output["pred_labels"]
+            pred_scores_t = output["pred_scores"]
 
-            # Optimization 3: Vectorized filtering (NumPy)
-            # Filter out non-target classes BEFORE the loop to reduce Python iteration overhead
-            if len(target_indices) > 0:
-                mask = np.isin(pred_labels, target_indices)
-                pred_boxes = pred_boxes[mask]
-                pred_labels = pred_labels[mask]
-                pred_scores = pred_scores[mask]
+            # Filter target classes on GPU first to reduce GPU->CPU transfer volume.
+            target_tensor = self.get_target_label_tensor(pred_labels_t.device)
+            if target_tensor is not None:
+                if target_tensor.numel() == 1:
+                    mask = pred_labels_t == target_tensor[0]
+                else:
+                    mask = (pred_labels_t.unsqueeze(1) == target_tensor).any(dim=1)
+                pred_boxes_t = pred_boxes_t[mask]
+                pred_labels_t = pred_labels_t[mask]
+                pred_scores_t = pred_scores_t[mask]
+
+            # Move filtered tensors to CPU only once before iterating.
+            pred_boxes = pred_boxes_t.cpu().numpy()
+            pred_labels = pred_labels_t.cpu().numpy()
+            pred_scores = pred_scores_t.cpu().numpy()
 
             for j in range(len(pred_boxes)):
                 box = pred_boxes[j]
