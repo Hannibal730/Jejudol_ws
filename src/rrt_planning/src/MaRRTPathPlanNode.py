@@ -37,7 +37,7 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('world_frame', 'velodyne')
         self.declare_parameter('desiredWaypointsFrequency', 5.0)
         self.declare_parameter('sample_frequency', 20.0)
-        self.declare_parameter('obstacle_topic', '/voxelnext/detected_center')
+        self.declare_parameter('obstacle_topic', '/vn/lidar_cone')
         self.declare_parameter('roi_end_topic', '/f9r_roi_end_velodyne')
 
         self.shouldPublishWaypoints = bool(self.get_parameter('publishWaypoints').value)
@@ -62,7 +62,7 @@ class MaRRTPathPlanNode(Node):
         """
         구독자들
         """
-        # VoxelNeXt center_object_detect.py가 발행하는 장애물 중심점 구독
+        # VoxelNeXt lidar_cone_detect.py가 발행하는 장애물 중심점 구독
         self.detected_center_sub = self.create_subscription(
             MarkerArray,
             self.obstacle_topic,

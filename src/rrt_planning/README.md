@@ -21,7 +21,7 @@ A brief introduction to the main steps of the proposed algorithm is given in my 
 ## Inputs, outputs, params
 
 #### Inputs
-- rclpy subscription: `/detected_center` (`visualization_msgs/msg/MarkerArray`)
+- rclpy subscription: `/vn/lidar_cone` (`visualization_msgs/msg/MarkerArray`)
 - rclpy subscription: `/odometry` (`nav_msgs/msg/Odometry`)
 
 #### Outputs
@@ -56,7 +56,7 @@ Edit. FROZEN Team from Sookmyung Women's University
 
 
 #### Inputs
-- rclpy subscription: `/detected_center` (`visualization_msgs/msg/MarkerArray`)
+- rclpy subscription: `/vn/lidar_cone` (`visualization_msgs/msg/MarkerArray`)
 - rclpy subscription: `/rrt/rrt_target` (`visualization_msgs/msg/MarkerArray`)
 
 #### Outputs

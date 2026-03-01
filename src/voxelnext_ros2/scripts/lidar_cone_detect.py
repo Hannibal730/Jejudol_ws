@@ -3,7 +3,7 @@
 import sys
 import os
 
-# 로그 포맷 설정: 노드 이름([VoxelNeXt_center_object_detect]) 제거
+# 로그 포맷 설정: 노드 이름([VoxelNeXt_lidar_cone_detect]) 제거
 # os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '[{severity}] [{time}]: {message}'
 os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '[{severity}]: {message}'
 
@@ -152,7 +152,7 @@ def pointcloud2_to_numpy(msg):
     
 class CenterObjectDetect(Node):
     def __init__(self):
-        super().__init__('VoxelNeXt_center_object_detect')
+        super().__init__('VoxelNeXt_lidar_cone_detect')
         # Get the directory of the current script
         script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -185,22 +185,18 @@ class CenterObjectDetect(Node):
         self.get_logger().info("✅ VoxelNeXt model load completed")
 
         # Create a ROS publisher for detected objects (center points markers)
-        self.pub_detected_centers = self.create_publisher(MarkerArray, '/vn/detected_center', 10)
-        self.get_logger().info("✅ Publishers for /vn/detected_center created")
+        self.pub_detected_centers = self.create_publisher(MarkerArray, '/vn/lidar_cone', 10)
+        self.get_logger().info("✅ Publishers for /vn/lidar_cone created")
 
         self.pub_detected_class   = self.create_publisher(MarkerArray, '/vn/detected_class', 10)
         self.get_logger().info("✅ Publishers for /vn/detected_class created")
 
-        self.pub_num_detected = self.create_publisher(Int8, '/vn/num_detected', 10)
+        self.pub_num_detected = self.create_publisher(Int8, '/vn/num_lidar_cone', 10)
         self.num_detected_msg = Int8()
-        self.get_logger().info("✅ Publisher for /vn/num_detected created")
+        self.get_logger().info("✅ Publisher for /vn/num_lidar_cone created")
 
-        self.pub_num_detected_roi = self.create_publisher(Int8, '/vn/num_detected_roi', 10)
-        self.num_detected_roi_msg = Int8()
-        self.get_logger().info("✅ Publisher for /vn/num_detected_roi created")
-
-        # Separate ROI visualization topic for num_detected_roi.
-        self.pub_detected_roi = self.create_publisher(Marker, '/vn/detected_roi', 10)
+        # ROI visualization topic.
+        self.pub_detected_roi = self.create_publisher(Marker, '/vn/num_lidar_cone_roi', 10)
         self.roi_marker = Marker()
         self.roi_marker.header.frame_id = "velodyne"
         self.roi_marker.ns = "detected_roi"
@@ -220,7 +216,7 @@ class CenterObjectDetect(Node):
         ]
         self.latest_roi_detected_count = 0
         self.roi_visual_timer = self.create_timer(0.2, self.publish_roi_marker)
-        self.get_logger().info("✅ Publisher for /vn/detected_roi created")
+        self.get_logger().info("✅ Publisher for /vn/num_lidar_cone_roi created")
 
         # Create a ROS subscriber to receive PointCloud2 messages from the LiDAR sensor
         self.subscription = self.create_subscription(
@@ -534,9 +530,6 @@ class CenterObjectDetect(Node):
         self.num_detected_msg.data = min(roi_detected_count, 127)
         self.pub_num_detected.publish(self.num_detected_msg)
 
-        # Publish number of detected objects inside ROI as Int8 with saturation.
-        self.num_detected_roi_msg.data = min(roi_detected_count, 127)
-        self.pub_num_detected_roi.publish(self.num_detected_roi_msg)
         self.latest_roi_detected_count = roi_detected_count
 
         return {
@@ -591,13 +584,13 @@ class CenterObjectDetect(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    center_object_detect_node = CenterObjectDetect()
+    lidar_cone_detect_node = CenterObjectDetect()
     try:
-        rclpy.spin(center_object_detect_node)
+        rclpy.spin(lidar_cone_detect_node)
     except KeyboardInterrupt:
         pass
     finally:
-        center_object_detect_node.destroy_node()
+        lidar_cone_detect_node.destroy_node()
         rclpy.shutdown()
 
 if __name__ == '__main__':

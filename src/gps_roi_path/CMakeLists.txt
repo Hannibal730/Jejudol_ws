@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.18)
-project(path_planning LANGUAGES CXX CUDA)
+project(gps_roi_path LANGUAGES CXX CUDA)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -74,11 +74,6 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Install Python scripts
-install(PROGRAMS
-  scripts/velocity_gps.py
-  DESTINATION lib/${PROJECT_NAME}
-)
 
 install(DIRECTORY
   launch

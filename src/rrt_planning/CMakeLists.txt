@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(RRT_pkg)
+project(rrt_planning)
 
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)

@@ -9,7 +9,7 @@ ament_python_install_package(pcdet)
 install(
     PROGRAMS
     scripts/3D_object_detect.py
-    scripts/center_object_detect.py
+    scripts/lidar_cone_detect.py
     scripts/model.py
 
     DESTINATION lib/${PROJECT_NAME}

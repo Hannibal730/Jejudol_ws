@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>RRT_pkg</name>
+  <name>rrt_planning</name>
   <version>2.0.0</version>
   <description>ROS2 migration of RRT-based path planning package.</description>
 
