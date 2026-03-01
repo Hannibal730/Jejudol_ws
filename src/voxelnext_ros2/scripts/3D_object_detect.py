@@ -64,27 +64,82 @@ nuscenes_class_names = [
 # -------------------------
 # Function: Convert PointCloud2 message to a NumPy array in (N, 5) format
 # -------------------------
+_pc2_dtype_cache = {}
+
+
+def _get_pc2_dtype(msg):
+    key = (
+        msg.point_step,
+        tuple((f.name, f.offset, f.datatype, f.count) for f in msg.fields),
+    )
+    dtype = _pc2_dtype_cache.get(key)
+    if dtype is None:
+        dtype = pc2.dtype_from_fields(msg.fields, point_step=msg.point_step)
+        _pc2_dtype_cache[key] = dtype
+    return dtype
+
+
 def pointcloud2_to_numpy(msg):
     """
     Convert a ROS PointCloud2 message to a NumPy array with shape (N, 5).
     - Format: [x, y, z, intensity, timestamp]
     - Extracts only points from the region of interest (ROI).
     """
-    points = np.array(list(pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z", "intensity"))))
-
-    if points.size == 0:
+    num_raw_points = int(msg.width) * int(msg.height)
+    if num_raw_points == 0:
         return np.zeros((0, 5), dtype=np.float32)
 
-    # If the array is structured (has named fields), extract them
-    if points.dtype.names:
-        points = np.column_stack([points['x'], points['y'], points['z'], points['intensity']])
+    dtype = _get_pc2_dtype(msg)
+    points = np.frombuffer(msg.data, dtype=dtype, count=num_raw_points)
 
-    points = points.astype(np.float32)
-    # Add timestamp column (fixed at 0.0 in this case)
-    timestamp = np.full((points.shape[0], 1), 0.0, dtype=np.float32)
-    points_with_timestamp = np.hstack((points, timestamp))
-    
+    if bool(sys.byteorder != 'little') != bool(msg.is_bigendian):
+        points = points.byteswap().newbyteorder()
+
+    required_fields = ("x", "y", "z", "intensity")
+    if points.dtype.names is None or any(f not in points.dtype.names for f in required_fields):
+        # Fallback for unexpected PointCloud2 field layout.
+        fallback = pc2.read_points(msg, skip_nans=True, field_names=required_fields)
+        if fallback.size == 0:
+            return np.zeros((0, 5), dtype=np.float32)
+        xyz_i = np.empty((fallback.shape[0], 4), dtype=np.float32)
+        xyz_i[:, 0] = fallback["x"]
+        xyz_i[:, 1] = fallback["y"]
+        xyz_i[:, 2] = fallback["z"]
+        xyz_i[:, 3] = fallback["intensity"]
+    else:
+        x = points["x"].astype(np.float32, copy=False)
+        y = points["y"].astype(np.float32, copy=False)
+        z = points["z"].astype(np.float32, copy=False)
+        intensity = points["intensity"].astype(np.float32, copy=False)
+
+        if msg.is_dense:
+            mask = None
+        else:
+            mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(z) & np.isfinite(intensity)
+
+        if mask is None:
+            n = x.shape[0]
+            xyz_i = np.empty((n, 4), dtype=np.float32)
+            xyz_i[:, 0] = x
+            xyz_i[:, 1] = y
+            xyz_i[:, 2] = z
+            xyz_i[:, 3] = intensity
+        else:
+            n = int(mask.sum())
+            if n == 0:
+                return np.zeros((0, 5), dtype=np.float32)
+            xyz_i = np.empty((n, 4), dtype=np.float32)
+            xyz_i[:, 0] = x[mask]
+            xyz_i[:, 1] = y[mask]
+            xyz_i[:, 2] = z[mask]
+            xyz_i[:, 3] = intensity[mask]
+
+    points_with_timestamp = np.empty((xyz_i.shape[0], 5), dtype=np.float32)
+    points_with_timestamp[:, :4] = xyz_i
+    points_with_timestamp[:, 4] = 0.0
     return points_with_timestamp
+
+
 class VoxelNeXt3DDetect(Node):
     def __init__(self):
         super().__init__('VoxelNeXt_3D_object_detect')

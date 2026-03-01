@@ -14,6 +14,7 @@ import torch
 import numpy as np
 import queue
 import threading
+import time
 from sensor_msgs.msg import PointCloud2, PointField
 from visualization_msgs.msg import MarkerArray, Marker
 from std_msgs.msg import Header, Int8
@@ -74,26 +75,79 @@ nuscenes_class_names = [
 # -------------------------
 # Function: Convert PointCloud2 message to a NumPy array in (N, 5) format
 # -------------------------
+_pc2_dtype_cache = {}
+
+
+def _get_pc2_dtype(msg):
+    key = (
+        msg.point_step,
+        tuple((f.name, f.offset, f.datatype, f.count) for f in msg.fields),
+    )
+    dtype = _pc2_dtype_cache.get(key)
+    if dtype is None:
+        dtype = pc2.dtype_from_fields(msg.fields, point_step=msg.point_step)
+        _pc2_dtype_cache[key] = dtype
+    return dtype
+
+
 def pointcloud2_to_numpy(msg):
     """
     Convert a ROS PointCloud2 message to a NumPy array with shape (N, 5).
     - Format: [x, y, z, intensity, timestamp]
     - Extracts only points from the region of interest (ROI).
     """
-    points = np.array(list(pc2.read_points(msg, skip_nans=True, field_names=("x", "y", "z", "intensity"))))
-
-    if points.size == 0:
+    num_raw_points = int(msg.width) * int(msg.height)
+    if num_raw_points == 0:
         return np.zeros((0, 5), dtype=np.float32)
 
-    # If the array is structured (has named fields), extract them
-    if points.dtype.names:
-        points = np.column_stack([points['x'], points['y'], points['z'], points['intensity']])
+    dtype = _get_pc2_dtype(msg)
+    points = np.frombuffer(msg.data, dtype=dtype, count=num_raw_points)
 
-    points = points.astype(np.float32)
-    # Add timestamp column (fixed at 0.0 in this case)
-    timestamp = np.full((points.shape[0], 1), 0.0, dtype=np.float32)
-    points_with_timestamp = np.hstack((points, timestamp))
-    
+    if bool(sys.byteorder != 'little') != bool(msg.is_bigendian):
+        points = points.byteswap().newbyteorder()
+
+    required_fields = ("x", "y", "z", "intensity")
+    if points.dtype.names is None or any(f not in points.dtype.names for f in required_fields):
+        # Fallback for unexpected PointCloud2 field layout.
+        fallback = pc2.read_points(msg, skip_nans=True, field_names=required_fields)
+        if fallback.size == 0:
+            return np.zeros((0, 5), dtype=np.float32)
+        xyz_i = np.empty((fallback.shape[0], 4), dtype=np.float32)
+        xyz_i[:, 0] = fallback["x"]
+        xyz_i[:, 1] = fallback["y"]
+        xyz_i[:, 2] = fallback["z"]
+        xyz_i[:, 3] = fallback["intensity"]
+    else:
+        x = points["x"].astype(np.float32, copy=False)
+        y = points["y"].astype(np.float32, copy=False)
+        z = points["z"].astype(np.float32, copy=False)
+        intensity = points["intensity"].astype(np.float32, copy=False)
+
+        if msg.is_dense:
+            mask = None
+        else:
+            mask = np.isfinite(x) & np.isfinite(y) & np.isfinite(z) & np.isfinite(intensity)
+
+        if mask is None:
+            n = x.shape[0]
+            xyz_i = np.empty((n, 4), dtype=np.float32)
+            xyz_i[:, 0] = x
+            xyz_i[:, 1] = y
+            xyz_i[:, 2] = z
+            xyz_i[:, 3] = intensity
+        else:
+            n = int(mask.sum())
+            if n == 0:
+                return np.zeros((0, 5), dtype=np.float32)
+            xyz_i = np.empty((n, 4), dtype=np.float32)
+            xyz_i[:, 0] = x[mask]
+            xyz_i[:, 1] = y[mask]
+            xyz_i[:, 2] = z[mask]
+            xyz_i[:, 3] = intensity[mask]
+
+    points_with_timestamp = np.empty((xyz_i.shape[0], 5), dtype=np.float32)
+    points_with_timestamp[:, :4] = xyz_i
+    points_with_timestamp[:, 4] = 0.0
     return points_with_timestamp
     
 class CenterObjectDetect(Node):
@@ -180,6 +234,25 @@ class CenterObjectDetect(Node):
         # Filtering Class for Autonomous Driving Competition
         self.target_classes = ['traffic_cone']
 
+        # Timing diagnostics
+        self.declare_parameter('timing_log_every_n', 1)
+        self.declare_parameter('slow_frame_threshold_ms', 120.0)
+        self.declare_parameter('expected_output_hz', 10.0)
+        self.declare_parameter('sync_cuda_for_timing', True)
+
+        self.timing_log_every_n = max(1, int(self.get_parameter('timing_log_every_n').value))
+        self.slow_frame_threshold_ms = float(self.get_parameter('slow_frame_threshold_ms').value)
+        self.expected_output_hz = max(0.1, float(self.get_parameter('expected_output_hz').value))
+        self.sync_cuda_for_timing = bool(self.get_parameter('sync_cuda_for_timing').value)
+        self.frame_index = 0
+        self.dropped_input_frames = 0
+        self.prev_frame_start_wall = None
+        self.prev_publish_wall = None
+        self.get_logger().info(
+            "⏱️ Timing enabled: pre/voxel/infer/publish "
+            f"(every_n={self.timing_log_every_n}, slow>{self.slow_frame_threshold_ms:.1f}ms)"
+        )
+
         # Keep only the latest frame to avoid latency accumulation.
         self.frame_queue = queue.Queue(maxsize=1)
         self.worker_running = True
@@ -194,6 +267,7 @@ class CenterObjectDetect(Node):
         if self.frame_queue.full():
             try:
                 self.frame_queue.get_nowait()
+                self.dropped_input_frames += 1
             except queue.Empty:
                 pass
 
@@ -213,21 +287,54 @@ class CenterObjectDetect(Node):
             if msg is None:
                 break
 
+            frame_idx = self.frame_index
+            self.frame_index += 1
+            frame_start = time.perf_counter()
+            input_period_ms = None
+            if self.prev_frame_start_wall is not None:
+                input_period_ms = (frame_start - self.prev_frame_start_wall) * 1000.0
+            self.prev_frame_start_wall = frame_start
+
             try:
+                preprocess_start = time.perf_counter()
                 points = pointcloud2_to_numpy(msg)
+                preprocess_ms = (time.perf_counter() - preprocess_start) * 1000.0
                 if points.shape[1] != 5:
                     self.get_logger().warn(f"❌ Incorrect point format! Expected (N,5), got: {points.shape}")
                     continue
 
-                output_dicts = self.detect_objects(points, self.voxelnext_model, self.lidar_dataset)
-                self.publish_markers(
+                output_dicts, detect_timing = self.detect_objects(points, self.voxelnext_model, self.lidar_dataset)
+
+                publish_start = time.perf_counter()
+                publish_info = self.publish_markers(
                     output_dicts,
                     self.pub_detected_centers,
                     self.pub_detected_class,
                     self.voxelnext_model.class_names
                 )
+                publish_ms = (time.perf_counter() - publish_start) * 1000.0
+
+                frame_total_ms = (time.perf_counter() - frame_start) * 1000.0
+                publish_wall = time.perf_counter()
+                output_period_ms = None
+                if self.prev_publish_wall is not None:
+                    output_period_ms = (publish_wall - self.prev_publish_wall) * 1000.0
+                self.prev_publish_wall = publish_wall
+
+                self.log_timing(
+                    frame_idx=frame_idx,
+                    preprocess_ms=preprocess_ms,
+                    voxel_ms=detect_timing["voxel_ms"],
+                    infer_ms=detect_timing["infer_ms"],
+                    publish_ms=publish_ms,
+                    total_ms=frame_total_ms,
+                    input_period_ms=input_period_ms,
+                    output_period_ms=output_period_ms,
+                    center_marker_count=publish_info["center_marker_count"],
+                    roi_detected_count=publish_info["roi_detected_count"],
+                )
             except Exception as e:
-                self.get_logger().error(f"❌ Error during object detection/publishing: {e}")
+                self.get_logger().error(f"❌ Frame {frame_idx} error during object detection/publishing: {e}")
 
     def destroy_node(self):
         self.worker_running = False
@@ -277,17 +384,20 @@ class CenterObjectDetect(Node):
         data_dict = lidar_dataset.point_feature_encoder.forward(data_dict)
 
         # Process data using each processor in the dataset configuration
+        voxel_start = time.perf_counter()
         for processor in lidar_dataset.dataset_cfg.DATA_PROCESSOR:
             if processor["NAME"] == "transform_points_to_voxels":
                 voxels, coords, num_points_per_voxel = lidar_dataset.voxel_generator.generate(data_dict["points"])
                 data_dict["voxels"] = voxels
                 data_dict["voxel_coords"] = coords
                 data_dict["voxel_num_points"] = num_points_per_voxel
+        voxel_ms = (time.perf_counter() - voxel_start) * 1000.0
 
         # Prepare tensors for model inference
         device = next(voxelnext_model.parameters()).device
         voxel_coords_tensor = torch.from_numpy(data_dict["voxel_coords"]).int().to(device)
 
+        infer_start = time.perf_counter()
         with torch.no_grad():
             batch_dict = {
                 "batch_size": 1,
@@ -297,7 +407,11 @@ class CenterObjectDetect(Node):
                 "voxel_num_points": torch.from_numpy(data_dict["voxel_num_points"]).to(device),
             }
             output_dicts, _ = voxelnext_model(batch_dict)
-        return output_dicts
+            if self.sync_cuda_for_timing and device.type == "cuda":
+                torch.cuda.synchronize(device)
+        infer_ms = (time.perf_counter() - infer_start) * 1000.0
+
+        return output_dicts, {"voxel_ms": voxel_ms, "infer_ms": infer_ms}
 
     def publish_markers(self, output_dicts, pub_detected_centers, pub_detected_class, class_names):
         center_markers = MarkerArray()
@@ -404,6 +518,55 @@ class CenterObjectDetect(Node):
         self.num_detected_roi_msg.data = min(roi_detected_count, 127)
         self.pub_num_detected_roi.publish(self.num_detected_roi_msg)
         self.latest_roi_detected_count = roi_detected_count
+
+        return {
+            "center_marker_count": len(center_markers.markers),
+            "roi_detected_count": roi_detected_count,
+        }
+
+    def log_timing(
+        self,
+        frame_idx,
+        preprocess_ms,
+        voxel_ms,
+        infer_ms,
+        publish_ms,
+        total_ms,
+        input_period_ms,
+        output_period_ms,
+        center_marker_count,
+        roi_detected_count,
+    ):
+        stage_pairs = [
+            ("pre", preprocess_ms),
+            ("voxel", voxel_ms),
+            ("infer", infer_ms),
+            ("pub", publish_ms),
+        ]
+        slowest_stage, slowest_stage_ms = max(stage_pairs, key=lambda x: x[1])
+        output_hz = 0.0 if output_period_ms is None or output_period_ms <= 0.0 else (1000.0 / output_period_ms)
+        target_frame_ms = 1000.0 / self.expected_output_hz
+
+        msg = (
+            f"⏱️ frame={frame_idx:05d} "
+            f"pre={preprocess_ms:7.2f}ms voxel={voxel_ms:7.2f}ms infer={infer_ms:7.2f}ms pub={publish_ms:7.2f}ms "
+            f"total={total_ms:7.2f}ms slowest={slowest_stage}:{slowest_stage_ms:7.2f}ms "
+            f"in_dt={'NA' if input_period_ms is None else f'{input_period_ms:7.2f}ms'} "
+            f"out_dt={'NA' if output_period_ms is None else f'{output_period_ms:7.2f}ms'} "
+            f"out_hz={'NA' if output_hz == 0.0 else f'{output_hz:5.2f}'} "
+            f"center={center_marker_count:3d} roi={roi_detected_count:3d} dropped_in={self.dropped_input_frames}"
+        )
+
+        is_slow_frame = total_ms > self.slow_frame_threshold_ms
+        is_below_target = total_ms > target_frame_ms
+
+        if is_slow_frame:
+            self.get_logger().warn(msg)
+        elif (frame_idx % self.timing_log_every_n) == 0:
+            if is_below_target:
+                self.get_logger().warn(msg)
+            else:
+                self.get_logger().info(msg)
 
 
 def main(args=None):
