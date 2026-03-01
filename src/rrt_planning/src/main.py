@@ -2,7 +2,7 @@
 
 import os
 
-os.environ.setdefault('RCUTILS_CONSOLE_OUTPUT_FORMAT', '[{severity}] [{time}] {message}')
+os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '[{severity}] {message}'
 
 import rclpy
 
