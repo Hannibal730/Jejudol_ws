@@ -131,22 +131,22 @@ class CenterObjectDetect(Node):
         self.get_logger().info("✅ VoxelNeXt model load completed")
 
         # Create a ROS publisher for detected objects (center points markers)
-        self.pub_detected_centers = self.create_publisher(MarkerArray, '/voxelnext/detected_center', 10)
-        self.get_logger().info("✅ Publishers for /voxelnext/detected_center created")
+        self.pub_detected_centers = self.create_publisher(MarkerArray, '/vn/detected_center', 10)
+        self.get_logger().info("✅ Publishers for /vn/detected_center created")
 
-        self.pub_detected_class   = self.create_publisher(MarkerArray, '/voxelnext/detected_class', 10)
-        self.get_logger().info("✅ Publishers for /voxelnext/detected_class created")
+        self.pub_detected_class   = self.create_publisher(MarkerArray, '/vn/detected_class', 10)
+        self.get_logger().info("✅ Publishers for /vn/detected_class created")
 
-        self.pub_num_detected = self.create_publisher(Int8, '/voxelnext/num_detected', 10)
+        self.pub_num_detected = self.create_publisher(Int8, '/vn/num_detected', 10)
         self.num_detected_msg = Int8()
-        self.get_logger().info("✅ Publisher for /voxelnext/num_detected created")
+        self.get_logger().info("✅ Publisher for /vn/num_detected created")
 
-        self.pub_num_detected_roi = self.create_publisher(Int8, '/voxelnext/num_detected_roi', 10)
+        self.pub_num_detected_roi = self.create_publisher(Int8, '/vn/num_detected_roi', 10)
         self.num_detected_roi_msg = Int8()
-        self.get_logger().info("✅ Publisher for /voxelnext/num_detected_roi created")
+        self.get_logger().info("✅ Publisher for /vn/num_detected_roi created")
 
         # Separate ROI visualization topic for num_detected_roi.
-        self.pub_detected_roi = self.create_publisher(Marker, '/voxelnext/detected_roi', 10)
+        self.pub_detected_roi = self.create_publisher(Marker, '/vn/detected_roi', 10)
         self.roi_marker = Marker()
         self.roi_marker.header.frame_id = "velodyne"
         self.roi_marker.ns = "detected_roi"
@@ -164,7 +164,9 @@ class CenterObjectDetect(Node):
             Point(x=ROI_X_MIN, y=ROI_Y_MAX, z=0.0),
             Point(x=ROI_X_MIN, y=ROI_Y_MIN, z=0.0),
         ]
-        self.get_logger().info("✅ Publisher for /voxelnext/detected_roi created")
+        self.latest_roi_detected_count = 0
+        self.roi_visual_timer = self.create_timer(0.2, self.publish_roi_marker)
+        self.get_logger().info("✅ Publisher for /vn/detected_roi created")
 
         # Create a ROS subscriber to receive PointCloud2 messages from the LiDAR sensor
         self.subscription = self.create_subscription(
@@ -247,6 +249,25 @@ class CenterObjectDetect(Node):
             self.inference_thread.join(timeout=1.0)
 
         return super().destroy_node()
+
+    def publish_roi_marker(self):
+        roi_detected_count = self.latest_roi_detected_count
+        self.roi_marker.header.stamp = self.get_clock().now().to_msg()
+
+        if roi_detected_count == 0:
+            self.roi_marker.color.r = 1.0
+            self.roi_marker.color.g = 1.0
+            self.roi_marker.color.b = 1.0
+        elif roi_detected_count < 4:
+            self.roi_marker.color.r = 1.0
+            self.roi_marker.color.g = 0.55
+            self.roi_marker.color.b = 0.0
+        else:
+            self.roi_marker.color.r = 1.0
+            self.roi_marker.color.g = 0.0
+            self.roi_marker.color.b = 0.0
+
+        self.pub_detected_roi.publish(self.roi_marker)
 
     def detect_objects(self, points, voxelnext_model, lidar_dataset):
         # self.get_logger().info("Processing LiDAR data.")
@@ -382,22 +403,7 @@ class CenterObjectDetect(Node):
         # Publish number of detected objects inside ROI as Int8 with saturation.
         self.num_detected_roi_msg.data = min(roi_detected_count, 127)
         self.pub_num_detected_roi.publish(self.num_detected_roi_msg)
-
-        # Publish ROI visualization on a separate topic.
-        self.roi_marker.header.stamp = current_time
-        if roi_detected_count == 0:
-            self.roi_marker.color.r = 1.0
-            self.roi_marker.color.g = 1.0
-            self.roi_marker.color.b = 1.0
-        elif roi_detected_count < 4:
-            self.roi_marker.color.r = 1.0
-            self.roi_marker.color.g = 0.55
-            self.roi_marker.color.b = 0.0
-        else:
-            self.roi_marker.color.r = 1.0
-            self.roi_marker.color.g = 0.0
-            self.roi_marker.color.b = 0.0
-        self.pub_detected_roi.publish(self.roi_marker)
+        self.latest_roi_detected_count = roi_detected_count
 
 
 def main(args=None):
