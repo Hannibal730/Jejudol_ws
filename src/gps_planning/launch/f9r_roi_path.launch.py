@@ -19,12 +19,12 @@ def generate_launch_description():
         output='screen',
         parameters=[
             params_file,
-            {'roi_end_point_topic': '/utm/f9r_roi_end_velodyne'},
+            {'roi_end_point_topic': '/gps/f9r_roi_end_velodyne'},
         ],
         remappings=[
-            ('/csv_path', '/utm/csv_path'),
-            ('/f9r_roi_path', '/utm/f9r_roi_path'),
-            ('/f9r_roi_end', '/utm/f9r_roi_end'),
+            ('/csv_path', '/gps/csv_path'),
+            ('/f9r_roi_path', '/gps/f9r_roi_path'),
+            ('/f9r_roi_end', '/gps/f9r_roi_end'),
         ]
     )
 

@@ -16,7 +16,7 @@ def generate_launch_description():
         name='f9p_to_utm',
         output='screen',
         remappings=[
-            ('/f9p_utm', '/utm/f9p_utm'),
+            ('/f9p_utm', '/gps/f9p_utm'),
         ]
     )
 
@@ -27,7 +27,7 @@ def generate_launch_description():
         name='f9r_to_utm',
         output='screen',
         remappings=[
-            ('/f9r_utm', '/utm/f9r_utm'),
+            ('/f9r_utm', '/gps/f9r_utm'),
         ]
     )
 
@@ -38,7 +38,7 @@ def generate_launch_description():
         name='azimuth_angle_calculator_node',
         output='screen',
         remappings=[
-            ('/azimuth_angle', '/utm/azimuth_angle'),
+            ('/azimuth_angle', '/gps/azimuth_angle'),
         ]
     )
 

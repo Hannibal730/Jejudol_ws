@@ -18,11 +18,11 @@ def generate_launch_description():
         output='screen',
         parameters=[params_file],
         remappings=[
-            ('/f9r_utm', '/utm/f9r_utm'),
-            ('/f9p_utm', '/utm/f9p_utm'),
-            ('/azimuth_angle', '/utm/azimuth_angle'),
-            ('/csv_path', '/utm/csv_path'),
-            ('/azimuth_angle_text', '/utm/azimuth_angle_text'),
+            ('/f9r_utm', '/gps/f9r_utm'),
+            ('/f9p_utm', '/gps/f9p_utm'),
+            ('/azimuth_angle', '/gps/azimuth_angle'),
+            ('/csv_path', '/gps/csv_path'),
+            ('/azimuth_angle_text', '/gps/azimuth_angle_text'),
         ]
     )
 
