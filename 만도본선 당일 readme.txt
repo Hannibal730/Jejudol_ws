@@ -75,7 +75,7 @@ RTK 마운트포인트 수정 필요.
 
 두 곳에서 맵 수정 필요.
 /home/hannibal/Mandol_ws/src/gps_to_utm/config/tf_gps_csv.yaml
-/home/hannibal/Mandol_ws/src/path_planning/config/csv_detector.yaml
+-/home/hannibal/Mandol_ws/src/path_planning/config/csv_detector.yaml
 
 -----------------------------------------------
 

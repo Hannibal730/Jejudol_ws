@@ -8,31 +8,33 @@ from std_msgs.msg import Bool, Float32, Int8
 
 
 # 전체 동작 순서 요약
-# 1) /lane_detection_status 와 /vn/num_lidar_cone 로 2-a/2-b 단계 분기
-#    - 2-a: lane_detection_status=True 이고 num_lidar_cone!=0
-#    - 2-b: 그 외 모든 경우
-# 2) 조향 선택
-#    - 2-a: /auto_steer_angle_rrt 사용
-#    - 2-b: num_lidar_cone==0 이면 /auto_steer_angle_yolotl, 아니면 /auto_steer_angle_rrt
-# 3) 쓰로틀 계산
-#    - 2-a에서 /emergency=True 면 현재 쓰로틀에서 deceleration_sec 동안 0.0으로 선형 감속
-#    - 2-a에서 /emergency=False 면 moon_course_thottle 고정값 사용
-#    - 2-b에서는 |steer| 비율로 0.0~auto_throttle_max 선형 매핑
-# 4) 안전장치 적용
+# 1) /lane_detection_status 와 /vn/num_lidar_cone 로 2-a/2-b 분기
+#    - 2-a: lane_detection_status=True and num_lidar_cone!=0
+#    - 2-b: 위 조건 미충족
+# 2) 2-a 단계
+#    - steer: /auto_steer_angle_rrt
+#    - emergency=True  -> 현재 throttle에서 deceleration_sec 동안 0.0으로 선형 감속
+#    - emergency=False -> throttle=moon_course_thottle(기본 0.2) 고정
+# 3) 2-b 단계
+#    - lane_detection_status=True  -> steer=/auto_steer_angle_yolotl
+#    - lane_detection_status=False -> 3단계로 이동
+# 4) 3단계 (lane_detection_status=False 인 경우)
+#    - num_lidar_cone!=0 -> steer=/auto_steer_angle_rrt
+#    - num_lidar_cone==0 -> steer=/auto_steer_angle_gps
+# 5) 안전장치
 #    - |/auto_steer_angle| < auto_steer_abs_max
 #    - 0.0 <= /auto_throttle <= auto_throttle_max
-# 5) /auto_steer_angle, /auto_throttle 을 주기적으로 상시 발행
+# 6) throttle 매핑 규칙
+#    - 2-a 비긴급 고정값/2-a 긴급 감속을 제외한 경우:
+#      |steer|가 0에 가까울수록 0.0, auto_steer_abs_max에 가까울수록 auto_throttle_max
+# 7) /auto_steer_angle, /auto_throttle을 주기적으로 상시 발행
 class DecisionNode(Node):
     def __init__(self):
         super().__init__('decision_node')
 
-        # ===== 사용자 요구사항 대응 파라미터 =====
-        # deceleration_sec: 2-a 단계 emergency 시 감속 완료까지 걸리는 시간(초)
-        # auto_steer_abs_max: /auto_steer_angle 절댓값 안전 상한
-        # auto_throttle_max: /auto_throttle 안전 상한
-        # moon_course_thottle: 2-a (비긴급) 고정 쓰로틀 값
+        # 핵심 파라미터
         self.declare_parameter('publish_rate_hz', 20.0)
-        self.declare_parameter('deceleration_sec', 2.0)
+        self.declare_parameter('deceleration_sec', 1.3)
         self.declare_parameter('auto_steer_abs_max', 17.0)
         self.declare_parameter('auto_throttle_max', 0.7)
         self.declare_parameter('moon_course_thottle', 0.2)
@@ -43,6 +45,7 @@ class DecisionNode(Node):
         self.auto_throttle_max = float(self.get_parameter('auto_throttle_max').value)
         self.moon_course_thottle = float(self.get_parameter('moon_course_thottle').value)
 
+        # 잘못된 파라미터 입력에 대한 안전 기본값
         if self.publish_rate_hz <= 0.0:
             self.publish_rate_hz = 20.0
         if self.deceleration_sec <= 0.0:
@@ -54,35 +57,29 @@ class DecisionNode(Node):
         if self.moon_course_thottle < 0.0:
             self.moon_course_thottle = 0.2
 
+        # 입력 상태
         self.lane_detection_status = False
         self.num_lidar_cone = 0
         self.emergency = False
         self.auto_steer_angle_rrt = 0.0
         self.auto_steer_angle_yolotl = 0.0
+        self.auto_steer_angle_gps = 0.0
 
+        # 긴급 감속 상태
         self.current_auto_throttle = 0.0
         self.decel_active = False
         self.decel_start_time = 0.0
         self.decel_start_throttle = 0.0
 
-        # ===== 입력 토픽(사용자 정의 1단계/2단계 판단 근거) =====
-        self.create_subscription(
-            Bool, '/lane_detection_status', self._lane_detection_cb, 10
-        )
-        self.create_subscription(
-            Int8, '/vn/num_lidar_cone', self._num_lidar_cone_cb, 10
-        )
-        self.create_subscription(
-            Bool, '/emergency', self._emergency_cb, 10
-        )
-        self.create_subscription(
-            Float32, '/auto_steer_angle_rrt', self._steer_rrt_cb, 10
-        )
-        self.create_subscription(
-            Float32, '/auto_steer_angle_yolotl', self._steer_yolotl_cb, 10
-        )
+        # 입력 토픽 구독
+        self.create_subscription(Bool, '/lane_detection_status', self._lane_detection_cb, 10)
+        self.create_subscription(Int8, '/vn/num_lidar_cone', self._num_lidar_cone_cb, 10)
+        self.create_subscription(Bool, '/emergency', self._emergency_cb, 10)
+        self.create_subscription(Float32, '/auto_steer_angle_rrt', self._steer_rrt_cb, 10)
+        self.create_subscription(Float32, '/auto_steer_angle_yolotl', self._steer_yolotl_cb, 10)
+        self.create_subscription(Float32, '/auto_steer_angle_gps', self._steer_gps_cb, 10)
 
-        # ===== 출력 토픽(항상 발행) =====
+        # 출력 토픽 상시 발행
         self.auto_steer_pub = self.create_publisher(Float32, '/auto_steer_angle', 10)
         self.auto_throttle_pub = self.create_publisher(Float32, '/auto_throttle', 10)
 
@@ -115,30 +112,32 @@ class DecisionNode(Node):
     def _steer_yolotl_cb(self, msg: Float32):
         self.auto_steer_angle_yolotl = float(msg.data)
 
+    def _steer_gps_cb(self, msg: Float32):
+        self.auto_steer_angle_gps = float(msg.data)
+
     @staticmethod
     def _clamp(value: float, low: float, high: float) -> float:
         return max(low, min(high, value))
 
-    def _choose_steer(self) -> float:
-        # 1단계
-        # lane_detection_status == True 이고 num_lidar_cone != 0 이면 2-a 단계
-        # 아니면 2-b 단계
+    def _select_steer_and_mode(self):
+        # 1단계: 2-a 조건 체크
         stage_2a = self.lane_detection_status and (self.num_lidar_cone != 0)
         if stage_2a:
-            # 2-a 단계(조향)
-            # emergency 여부와 무관하게 조향은 RRT 값을 사용
-            return self.auto_steer_angle_rrt
+            return '2a', self.auto_steer_angle_rrt
 
-        # 2-b 단계(조향)
-        # num_lidar_cone == 0 이면 yolotl, 아니면 rrt 사용
-        cone_count_2b = self.num_lidar_cone
-        if cone_count_2b == 0:
-            return self.auto_steer_angle_yolotl
-        return self.auto_steer_angle_rrt
+        # 2-b: 2-a 실패 시 진입
+        if self.lane_detection_status:
+            # 2-b: lane_detection_status=True -> yolotl 사용
+            return '2b_lane_true', self.auto_steer_angle_yolotl
+
+        # 3단계: 2-b에서 lane_detection_status=False 인 경우
+        if self.num_lidar_cone != 0:
+            return '3_rrt', self.auto_steer_angle_rrt
+        return '3_gps', self.auto_steer_angle_gps
 
     def _compute_emergency_throttle(self) -> float:
-        # 2-a 단계에서 emergency=True 일 때:
-        # 현재 throttle 값에서 0.0까지 deceleration_sec 동안 선형 감속
+        # 2-a + emergency=True:
+        # 현재 throttle에서 0.0까지 deceleration_sec 동안 선형 감속
         now = time.time()
         if not self.decel_active:
             self.decel_active = True
@@ -149,28 +148,34 @@ class DecisionNode(Node):
         progress = self._clamp(elapsed / self.deceleration_sec, 0.0, 1.0)
         return self.decel_start_throttle * (1.0 - progress)
 
+    def _compute_mapped_throttle(self, steer_cmd: float) -> float:
+        # steer 절댓값 비례 매핑:
+        # |steer|=0 -> 0.0, |steer|=auto_steer_abs_max 근접 -> auto_throttle_max
+        ratio = self._clamp(
+            abs(steer_cmd) / max(self.auto_steer_abs_max, 1e-6),
+            0.0,
+            1.0,
+        )
+        return self.auto_throttle_max * ratio
+
     def _on_timer(self):
-        # 1단계 판별 결과를 timer 루프에서도 재사용
-        stage_2a = self.lane_detection_status and (self.num_lidar_cone != 0)
-        steer_cmd = self._choose_steer()
+        mode, steer_cmd = self._select_steer_and_mode()
 
         # 안전장치: |auto_steer_angle| < auto_steer_abs_max
         steer_limit = max(0.001, self.auto_steer_abs_max - 1e-3)
         steer_cmd = self._clamp(steer_cmd, -steer_limit, steer_limit)
 
-        if stage_2a:
+        if mode == '2a':
             if self.emergency:
-                # 2-a + emergency=True: 지정 시간에 걸쳐 0.0으로 감속
                 throttle_cmd = self._compute_emergency_throttle()
             else:
-                # 2-a + emergency=False: moon_course_thottle 고정 사용
+                # 2-a + emergency=False: 고정 throttle
                 self.decel_active = False
                 throttle_cmd = self.moon_course_thottle
         else:
-            # 2-b: 기존 로직 유지(조향 절댓값 기반 쓰로틀 매핑)
+            # 2-b 및 3단계: steer 기반 throttle 매핑
             self.decel_active = False
-            ratio = self._clamp(abs(steer_cmd) / max(self.auto_steer_abs_max, 1e-6), 0.0, 1.0)
-            throttle_cmd = self.auto_throttle_max * ratio
+            throttle_cmd = self._compute_mapped_throttle(steer_cmd)
 
         # 안전장치: 0.0 <= auto_throttle <= auto_throttle_max
         throttle_cmd = self._clamp(throttle_cmd, 0.0, self.auto_throttle_max)
