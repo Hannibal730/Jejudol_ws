@@ -7,7 +7,7 @@ MaRRT Pure Pursuit Node (ROS2)
 - /odometry 토픽을 구독하여 차량의 현재 위치(라이다, 후륜축 중심)와 heading을 업데이트합니다.
 - velodyne 좌표계상의 제어점을 차량 좌표계로 변환한 후, pure pursuit 제어를 수행합니다.
 - std_msgs/Float32 메시지로 조향각(°)을 publish합니다.
-- RViz를 위해 최종 보간 경로(/final_waypoints)와 lookahead point(/lookahead_marker)를 publish합니다.
+- RViz를 위해 최종 보간 경로(/final_waypoints)와 lookahead point(/rrt/lookahead_point)를 publish합니다.
 """
 
 import math
@@ -29,7 +29,7 @@ class MaRRTPurePursuit(Node):
         super().__init__('ma_rrt_purepursuit')
 
         self.declare_parameter('desired_speed', 2.0)
-        self.declare_parameter('wheelbase', 0.75)
+        self.declare_parameter('wheelbase', 0.724)
         self.declare_parameter('lookahead_distance', 3.5)
 
         # 파라미터 (기본적으로 상수 속도 유지)
@@ -46,8 +46,8 @@ class MaRRTPurePursuit(Node):
         self.control_points = []
 
         # 퍼블리셔
-        self.cmd_pub = self.create_publisher(Float32, '/auto_steer_angle_cone', 10)
-        self.lookahead_marker_pub = self.create_publisher(Marker, '/lookahead_marker', 10)
+        self.cmd_pub = self.create_publisher(Float32, '/auto_steer_angle_rrt', 10)
+        self.lookahead_marker_pub = self.create_publisher(Marker, '/rrt/lookahead_point', 10)
         self.final_waypoints_pub = self.create_publisher(Path, '/final_waypoints', 10)
 
         # 구독자

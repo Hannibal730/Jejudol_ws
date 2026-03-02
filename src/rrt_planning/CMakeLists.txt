@@ -15,7 +15,7 @@ install(
     src/main.py
     src/MaRRTPathPlanNode.py
     src/ma_rrt.py
-    src/ma_rrt_purepursuit.py
+    src/rrt_purepursuit.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
