@@ -3,9 +3,10 @@
 ros2 run yolotl_ros2 lane_follower
 
 
-카메라/백파일 input
-ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:=/dev/video2
+백파일 input
 ros2 bag play ~/Downloads/test13 -l
+
+카메라 input은 도율이가 작업 중
 
 
 
