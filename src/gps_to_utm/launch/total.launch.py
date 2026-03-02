@@ -14,7 +14,10 @@ def generate_launch_description():
         package='gps_to_utm',
         executable='f9p_to_utm',
         name='f9p_to_utm',
-        output='screen'
+        output='screen',
+        remappings=[
+            ('/f9p_utm', '/utm/f9p_utm'),
+        ]
     )
 
     # 2. f9r_to_utm node
@@ -22,7 +25,10 @@ def generate_launch_description():
         package='gps_to_utm',
         executable='f9r_to_utm',
         name='f9r_to_utm',
-        output='screen'
+        output='screen',
+        remappings=[
+            ('/f9r_utm', '/utm/f9r_utm'),
+        ]
     )
 
     # 3. azimuth_angle_calculator_node
@@ -30,7 +36,10 @@ def generate_launch_description():
         package='gps_to_utm',
         executable='azimuth_angle_calculator_node',
         name='azimuth_angle_calculator_node',
-        output='screen'
+        output='screen',
+        remappings=[
+            ('/azimuth_angle', '/utm/azimuth_angle'),
+        ]
     )
 
     # 4. Include tf_gps_csv.launch.py

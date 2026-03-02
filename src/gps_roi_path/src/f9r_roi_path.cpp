@@ -44,7 +44,7 @@ public:
     roi_length_pts_    = this->declare_parameter<int>("roi_length_points", 50);         // use_points_length=true일 때 ROI에 포함할 점의 개수. 
     search_span_pts_   = this->declare_parameter<int>("search_span_points", 2000);      // 초기 전방 인덱스 탐색 폭
     hysteresis_k_      = this->declare_parameter<int>("hysteresis_k", 0);               // 점프 완화 (/f9r_roi_path 시작점 선정 시 자잘한 떨림에 의한 변화 방지. 0~3 정도가 적정값. 클수록 방지 정도가 커짐)
-    line_width_        = this->declare_parameter<double>("line_width", 0.3);
+    line_width_        = this->declare_parameter<double>("line_width", 0.15);
     end_marker_size_   = this->declare_parameter<double>("end_marker_size", 0.4);
 
     // ====== Subscriptions (transient_local) ======
@@ -256,11 +256,11 @@ private:
     m.id = 0;
     m.type = visualization_msgs::msg::Marker::LINE_STRIP;
     m.action = visualization_msgs::msg::Marker::ADD;
-    m.scale.x = line_width_;
-    m.color.a = 0.4f;
-    m.color.r = 1.0f;
-    m.color.g = 0.0f;
-    m.color.b = 0.0f;
+    m.scale.x = line_width_ * 0.5;
+    m.color.a = 0.6f;
+    m.color.r = 0.8f;          // 204 / 255
+    m.color.g = 0.160784f;     // 41 / 255
+    m.color.b = 0.8f;          // 204 / 255
     m.pose.orientation.w = 1.0;
 
     if (e >= s) {

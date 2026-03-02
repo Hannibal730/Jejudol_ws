@@ -38,7 +38,7 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('desiredWaypointsFrequency', 5.0)
         self.declare_parameter('sample_frequency', 20.0)
         self.declare_parameter('obstacle_topic', '/vn/lidar_cone')
-        self.declare_parameter('roi_end_topic', '/f9r_roi_end_velodyne')
+        self.declare_parameter('roi_end_topic', '/utm/f9r_roi_end_velodyne')
         self.declare_parameter('rrt_target_visual_topic', '/rrt/rrt_target')
 
         self.shouldPublishWaypoints = bool(self.get_parameter('publishWaypoints').value)
@@ -208,10 +208,10 @@ class MaRRTPathPlanNode(Node):
         marker.scale.y = 0.5
         marker.scale.z = 0.5
 
-        marker.color.a = 1.0
-        marker.color.r = 0.5
-        marker.color.g = 0.2
-        marker.color.b = 0.7
+        marker.color.a = 0.4
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
         marker.lifetime = self._duration(0.3)
 
         self.rrtTargetVisualPub.publish(self._single_marker_array(marker))
