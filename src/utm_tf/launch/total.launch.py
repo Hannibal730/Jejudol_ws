@@ -7,11 +7,11 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 def generate_launch_description():
     # Get the path to the package's share directory
-    gps_to_utm_share_dir = get_package_share_directory('gps_to_utm')
+    utm_tf_share_dir = get_package_share_directory('utm_tf')
 
     # 1. f9p_to_utm node
     f9p_node = Node(
-        package='gps_to_utm',
+        package='utm_tf',
         executable='f9p_to_utm',
         name='f9p_to_utm',
         output='screen',
@@ -22,7 +22,7 @@ def generate_launch_description():
 
     # 2. f9r_to_utm node
     f9r_node = Node(
-        package='gps_to_utm',
+        package='utm_tf',
         executable='f9r_to_utm',
         name='f9r_to_utm',
         output='screen',
@@ -33,7 +33,7 @@ def generate_launch_description():
 
     # 3. azimuth_angle_calculator_node
     azimuth_node = Node(
-        package='gps_to_utm',
+        package='utm_tf',
         executable='azimuth_angle_calculator_node',
         name='azimuth_angle_calculator_node',
         output='screen',
@@ -44,7 +44,7 @@ def generate_launch_description():
 
     # 4. Include tf_gps_csv.launch.py
     tf_gps_csv_launch_file = os.path.join(
-        gps_to_utm_share_dir,
+        utm_tf_share_dir,
         'launch',
         'tf_gps_csv.launch.py'
     )
