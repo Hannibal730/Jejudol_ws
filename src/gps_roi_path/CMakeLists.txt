@@ -45,36 +45,6 @@ install(DIRECTORY include/
   DESTINATION include
 )
 
-
-# Pure Pursuit Node
-add_executable(pure_pursuit_node src/pure_pursuit.cpp)
-ament_target_dependencies(pure_pursuit_node
-  rclcpp
-  visualization_msgs
-  std_msgs
-  geometry_msgs
-  tf2_ros
-  tf2_geometry_msgs
-)
-install(TARGETS
-  pure_pursuit_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-# CSV Radius Detector Node
-add_executable(csv_radius_detector_node src/csv_radius_detector.cpp)
-ament_target_dependencies(csv_radius_detector_node
-  rclcpp
-  geometry_msgs
-  std_msgs
-  visualization_msgs
-)
-install(TARGETS
-  csv_radius_detector_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-
 install(DIRECTORY
   launch
   config
