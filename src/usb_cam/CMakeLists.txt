@@ -14,6 +14,7 @@ find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
 find_package(OpenCV REQUIRED)
+find_package(camera_info_manager REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(avcodec REQUIRED libavcodec)
@@ -57,7 +58,8 @@ ament_auto_add_library(${PROJECT_NAME}_node SHARED
 )
 
 target_link_libraries(${PROJECT_NAME}_node
-  ${PROJECT_NAME})
+  ${PROJECT_NAME}
+  camera_info_manager::camera_info_manager)
 
 ## Use node to generate an executable
 rclcpp_components_register_node(${PROJECT_NAME}_node
@@ -110,6 +112,7 @@ install(TARGETS
 )
 
 ament_auto_package(
+  USE_SCOPED_HEADER_INSTALL_DIR
   INSTALL_TO_SHARE
     launch
     config
