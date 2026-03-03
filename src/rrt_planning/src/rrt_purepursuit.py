@@ -28,12 +28,10 @@ class MaRRTPurePursuit(Node):
     def __init__(self):
         super().__init__('ma_rrt_purepursuit')
 
-        self.declare_parameter('desired_speed', 2.0)
         self.declare_parameter('wheelbase', 0.724)
         self.declare_parameter('lookahead_distance', 3.5)
 
-        # 파라미터 (기본적으로 상수 속도 유지)
-        self.desired_speed = float(self.get_parameter('desired_speed').value)
+        # 파라미터
         self.wheelbase = float(self.get_parameter('wheelbase').value)
         self.Ld = float(self.get_parameter('lookahead_distance').value)
 

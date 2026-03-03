@@ -28,11 +28,9 @@ class MaRRTCautionPurePursuit(Node):
     def __init__(self):
         super().__init__('rrt_caution_purepursuit')
 
-        self.declare_parameter('desired_speed', 2.0)
         self.declare_parameter('wheelbase', 0.724)
         self.declare_parameter('lookahead_distatnce_caution', 1.5)
 
-        self.desired_speed = float(self.get_parameter('desired_speed').value)
         self.wheelbase = float(self.get_parameter('wheelbase').value)
         self.Ld = float(self.get_parameter('lookahead_distatnce_caution').value)
 
