@@ -6,76 +6,109 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, Int8
 
+# 실험용 변수 기본값(한 곳에서 관리)
+DEFAULTS = {
+    'publish_rate_hz': 20.0,
+    'log_rate_hz': 1.0,
+    'deceleration_sec': 1.5,
+    'auto_steer_angle_abs_max': 23.0,
+    'auto_throttle_max': 0.7,
+    'auto_throttle_moon_course': 0.2,
+    'auto_throttle_yolotl_max': 0.7,
+    'auto_throttle_yolotl_min': 0.4,
+    'auto_throttle_rrt_max': 0.7,
+    'auto_throttle_rrt_min': 0.4,
+    'auto_throttle_gps': 0.3,
+    'auto_throttle_static_obstacle': 0.4,
+    'num_static_obstacle_threshold': 4,
+}
 
-# 전체 동작 순서 요약
-# 1) /lane_detection_status 와 /vn/num_lidar_cone 로 2-a/2-b 분기
-#    - 2-a: lane_detection_status=True and num_lidar_cone!=0
-#    - 2-b: 위 조건 미충족
-# 2) 2-a 단계
-#    - steer: /auto_steer_angle_rrt
-#    - emergency=True  -> 현재 throttle에서 deceleration_sec 동안 0.0으로 선형 감속
-#    - emergency=False -> throttle=moon_course_thottle(기본 0.2) 고정
-# 3) 2-b 단계
-#    - lane_detection_status=True  -> steer=/auto_steer_angle_yolotl
-#    - lane_detection_status=False -> 3단계로 이동
-# 4) 3단계 (lane_detection_status=False 인 경우)
-#    - num_lidar_cone!=0 -> steer=/auto_steer_angle_rrt
-#    - num_lidar_cone==0 -> steer=/auto_steer_angle_gps
-# 5) 안전장치
-#    - |/auto_steer_angle| < auto_steer_abs_max
-#    - 0.0 <= /auto_throttle <= auto_throttle_max
-# 6) throttle 매핑 규칙
-#    - 2-a 비긴급 고정값/2-a 긴급 감속을 제외한 경우:
-#      |steer|가 0에 가까울수록 0.0, auto_steer_abs_max에 가까울수록 auto_throttle_max
-# 7) /auto_steer_angle, /auto_throttle을 주기적으로 상시 발행
+# mission state 이름(요청 반영)
+MISSION_EMERGENCY = 'emergency'
+MISSION_MOON_COURSE = 'moon_course'
+MISSION_LANE = 'lane'
+MISSION_GPS = 'gps'
+MISSION_STATIC_OBSTACLE = 'static_obstacle'
+MISSION_RRT = 'rrt'
+
+
+# 동작 단계 요약
+# 1) lane_detection_status=True and num_lidar_cone!=0 -> 2-a, 아니면 2-b
+# 2-a) emergency=True  -> mission_state=emergency
+#      emergency=False -> mission_state=moon_course
+# 2-b) lane_detection_status=True -> mission_state=lane
+# 3)   num_lidar_cone==0 -> mission_state=gps
+# 4)   num_lidar_cone>=threshold -> mission_state=static_obstacle
+#      num_lidar_cone<threshold  -> mission_state=rrt
+# state별 제어
+# - emergency       : steer=yolotl, throttle은 현재값에서 deceleration_sec 동안 0.0으로 선형 감속
+# - moon_course     : steer=rrt_caution, throttle=auto_throttle_moon_course(고정)
+# - lane            : steer=yolotl, throttle=[yolotl_min, yolotl_max] 역비례 매핑
+# - gps             : steer=gps, throttle=auto_throttle_gps(고정)
+# - static_obstacle : steer=rrt_caution, throttle=auto_throttle_static_obstacle(고정)
+# - rrt             : steer=rrt, throttle=[rrt_min, rrt_max] 역비례 매핑
+# 5)   throttle 매핑 경로(2-b의 yolotl, 4단계의 rrt)에서는 매핑 전에 steer에 auto_steer_angle_abs_max 안전장치를 먼저 적용
+# 공통 안전장치: |auto_steer_angle| < auto_steer_angle_abs_max, 0<=auto_throttle<=auto_throttle_max
 class DecisionNode(Node):
     def __init__(self):
         super().__init__('decision_node')
 
-        # 핵심 파라미터
-        self.declare_parameter('publish_rate_hz', 20.0)
-        self.declare_parameter('deceleration_sec', 1.3)
-        self.declare_parameter('auto_steer_abs_max', 17.0)
-        self.declare_parameter('auto_throttle_max', 0.7)
-        self.declare_parameter('moon_course_thottle', 0.2)
+        # 실험값을 파라미터로 전부 노출
+        for key, value in DEFAULTS.items():
+            self.declare_parameter(key, value)
 
         self.publish_rate_hz = float(self.get_parameter('publish_rate_hz').value)
+        self.log_rate_hz = float(self.get_parameter('log_rate_hz').value)
         self.deceleration_sec = float(self.get_parameter('deceleration_sec').value)
-        self.auto_steer_abs_max = float(self.get_parameter('auto_steer_abs_max').value)
+        self.auto_steer_angle_abs_max = float(self.get_parameter('auto_steer_angle_abs_max').value)
         self.auto_throttle_max = float(self.get_parameter('auto_throttle_max').value)
-        self.moon_course_thottle = float(self.get_parameter('moon_course_thottle').value)
+        self.auto_throttle_moon_course = float(self.get_parameter('auto_throttle_moon_course').value)
+        self.auto_throttle_yolotl_max = float(self.get_parameter('auto_throttle_yolotl_max').value)
+        self.auto_throttle_yolotl_min = float(self.get_parameter('auto_throttle_yolotl_min').value)
+        self.auto_throttle_rrt_max = float(self.get_parameter('auto_throttle_rrt_max').value)
+        self.auto_throttle_rrt_min = float(self.get_parameter('auto_throttle_rrt_min').value)
+        self.auto_throttle_gps = float(self.get_parameter('auto_throttle_gps').value)
+        self.auto_throttle_static_obstacle = float(self.get_parameter('auto_throttle_static_obstacle').value)
+        self.num_static_obstacle_threshold = int(self.get_parameter('num_static_obstacle_threshold').value)
 
-        # 잘못된 파라미터 입력에 대한 안전 기본값
+        # 파라미터 안전 보정
         if self.publish_rate_hz <= 0.0:
-            self.publish_rate_hz = 20.0
+            self.publish_rate_hz = DEFAULTS['publish_rate_hz']
         if self.deceleration_sec <= 0.0:
-            self.deceleration_sec = 2.0
-        if self.auto_steer_abs_max <= 0.0:
-            self.auto_steer_abs_max = 17.0
+            self.deceleration_sec = DEFAULTS['deceleration_sec']
+        if self.log_rate_hz < 0.0:
+            self.log_rate_hz = DEFAULTS['log_rate_hz']
+        if self.auto_steer_angle_abs_max <= 0.0:
+            self.auto_steer_angle_abs_max = DEFAULTS['auto_steer_angle_abs_max']
         if self.auto_throttle_max <= 0.0:
-            self.auto_throttle_max = 0.7
-        if self.moon_course_thottle < 0.0:
-            self.moon_course_thottle = 0.2
+            self.auto_throttle_max = DEFAULTS['auto_throttle_max']
+        if self.num_static_obstacle_threshold < 0:
+            self.num_static_obstacle_threshold = DEFAULTS['num_static_obstacle_threshold']
+        self.steer_limit = max(0.001, self.auto_steer_angle_abs_max - 1e-3)
 
         # 입력 상태
         self.lane_detection_status = False
         self.num_lidar_cone = 0
         self.emergency = False
         self.auto_steer_angle_rrt = 0.0
+        self.auto_steer_angle_rrt_caution = 0.0
         self.auto_steer_angle_yolotl = 0.0
         self.auto_steer_angle_gps = 0.0
+        self.current_mission_state = MISSION_GPS
 
         # 긴급 감속 상태
         self.current_auto_throttle = 0.0
         self.decel_active = False
         self.decel_start_time = 0.0
         self.decel_start_throttle = 0.0
+        self._next_log_time = 0.0
 
         # 입력 토픽 구독
         self.create_subscription(Bool, '/lane_detection_status', self._lane_detection_cb, 10)
         self.create_subscription(Int8, '/vn/num_lidar_cone', self._num_lidar_cone_cb, 10)
         self.create_subscription(Bool, '/emergency', self._emergency_cb, 10)
         self.create_subscription(Float32, '/auto_steer_angle_rrt', self._steer_rrt_cb, 10)
+        self.create_subscription(Float32, '/auto_steer_angle_rrt_caution', self._steer_rrt_caution_cb, 10)
         self.create_subscription(Float32, '/auto_steer_angle_yolotl', self._steer_yolotl_cb, 10)
         self.create_subscription(Float32, '/auto_steer_angle_gps', self._steer_gps_cb, 10)
 
@@ -87,13 +120,12 @@ class DecisionNode(Node):
 
         self.get_logger().info(
             'decision_node started: publish_rate=%.1fHz deceleration_sec=%.2fs '
-            'auto_steer_abs_max=%.2f auto_throttle_max=%.2f moon_course_thottle=%.2f'
+            'auto_steer_angle_abs_max=%.2f auto_throttle_max=%.2f'
             % (
                 self.publish_rate_hz,
                 self.deceleration_sec,
-                self.auto_steer_abs_max,
+                self.auto_steer_angle_abs_max,
                 self.auto_throttle_max,
-                self.moon_course_thottle,
             )
         )
 
@@ -109,6 +141,9 @@ class DecisionNode(Node):
     def _steer_rrt_cb(self, msg: Float32):
         self.auto_steer_angle_rrt = float(msg.data)
 
+    def _steer_rrt_caution_cb(self, msg: Float32):
+        self.auto_steer_angle_rrt_caution = float(msg.data)
+
     def _steer_yolotl_cb(self, msg: Float32):
         self.auto_steer_angle_yolotl = float(msg.data)
 
@@ -119,21 +154,9 @@ class DecisionNode(Node):
     def _clamp(value: float, low: float, high: float) -> float:
         return max(low, min(high, value))
 
-    def _select_steer_and_mode(self):
-        # 1단계: 2-a 조건 체크
-        stage_2a = self.lane_detection_status and (self.num_lidar_cone != 0)
-        if stage_2a:
-            return '2a', self.auto_steer_angle_rrt
-
-        # 2-b: 2-a 실패 시 진입
-        if self.lane_detection_status:
-            # 2-b: lane_detection_status=True -> yolotl 사용
-            return '2b_lane_true', self.auto_steer_angle_yolotl
-
-        # 3단계: 2-b에서 lane_detection_status=False 인 경우
-        if self.num_lidar_cone != 0:
-            return '3_rrt', self.auto_steer_angle_rrt
-        return '3_gps', self.auto_steer_angle_gps
+    def _clamp_steer(self, steer_value: float) -> float:
+        # "< max" 조건을 만족시키기 위해 아주 작은 마진을 둠
+        return self._clamp(steer_value, -self.steer_limit, self.steer_limit)
 
     def _compute_emergency_throttle(self) -> float:
         # 2-a + emergency=True:
@@ -148,36 +171,95 @@ class DecisionNode(Node):
         progress = self._clamp(elapsed / self.deceleration_sec, 0.0, 1.0)
         return self.decel_start_throttle * (1.0 - progress)
 
-    def _compute_mapped_throttle(self, steer_cmd: float) -> float:
-        # steer 절댓값 비례 매핑:
-        # |steer|=0 -> 0.0, |steer|=auto_steer_abs_max 근접 -> auto_throttle_max
+    def _map_throttle_inverse_by_steer(self, steer_cmd: float, throttle_max: float, throttle_min: float) -> float:
+        # |steer|=0 에 가까울수록 throttle_max
+        # |steer|=auto_steer_angle_abs_max 에 가까울수록 throttle_min
+        if throttle_max < throttle_min:
+            throttle_max, throttle_min = throttle_min, throttle_max
+
         ratio = self._clamp(
-            abs(steer_cmd) / max(self.auto_steer_abs_max, 1e-6),
+            abs(steer_cmd) / max(self.auto_steer_angle_abs_max, 1e-6),
             0.0,
             1.0,
         )
-        return self.auto_throttle_max * ratio
+        return throttle_max - ratio * (throttle_max - throttle_min)
+
+    def _get_mission_state(self) -> str:
+        # 처리 속도와 가독성을 위해 상태를 한 번만 판정
+        lane_on = self.lane_detection_status
+        cone_count = self.num_lidar_cone
+
+        if lane_on and (cone_count != 0):
+            if self.emergency:
+                return MISSION_EMERGENCY
+            return MISSION_MOON_COURSE
+
+        if lane_on:
+            return MISSION_LANE
+
+        if cone_count == 0:
+            return MISSION_GPS
+
+        if cone_count >= self.num_static_obstacle_threshold:
+            return MISSION_STATIC_OBSTACLE
+
+        return MISSION_RRT
+
+    def _maybe_log_status(self, steer_cmd: float, throttle_cmd: float):
+        # log_rate_hz == 0.0 이면 매 tick마다 출력
+        now = time.time()
+        if self.log_rate_hz > 0.0:
+            if now < self._next_log_time:
+                return
+            self._next_log_time = now + (1.0 / self.log_rate_hz)
+
+        self.get_logger().info(
+            f'mission_state={self.current_mission_state}, '
+            f'/auto_steer_angle={steer_cmd:.3f}, '
+            f'/auto_throttle={throttle_cmd:.3f}'
+        )
 
     def _on_timer(self):
-        mode, steer_cmd = self._select_steer_and_mode()
+        state = self._get_mission_state()
+        self.current_mission_state = state
 
-        # 안전장치: |auto_steer_angle| < auto_steer_abs_max
-        steer_limit = max(0.001, self.auto_steer_abs_max - 1e-3)
-        steer_cmd = self._clamp(steer_cmd, -steer_limit, steer_limit)
-
-        if mode == '2a':
-            if self.emergency:
-                throttle_cmd = self._compute_emergency_throttle()
-            else:
-                # 2-a + emergency=False: 고정 throttle
-                self.decel_active = False
-                throttle_cmd = self.moon_course_thottle
-        else:
-            # 2-b 및 3단계: steer 기반 throttle 매핑
+        if state == MISSION_EMERGENCY:
+            steer_cmd = self._clamp_steer(self.auto_steer_angle_yolotl)
+            throttle_cmd = self._compute_emergency_throttle()
+        elif state == MISSION_MOON_COURSE:
             self.decel_active = False
-            throttle_cmd = self._compute_mapped_throttle(steer_cmd)
+            steer_cmd = self._clamp_steer(self.auto_steer_angle_rrt_caution)
+            throttle_cmd = self.auto_throttle_moon_course
+        elif state == MISSION_LANE:
+            self.decel_active = False
+            steer_cmd = self._clamp_steer(self.auto_steer_angle_yolotl)
+            throttle_cmd = self._map_throttle_inverse_by_steer(
+                steer_cmd,
+                self.auto_throttle_yolotl_max,
+                self.auto_throttle_yolotl_min,
+            )
+        elif state == MISSION_GPS:
+            self.decel_active = False
+            steer_cmd = self._clamp_steer(self.auto_steer_angle_gps)
+            throttle_cmd = self.auto_throttle_gps
+        elif state == MISSION_STATIC_OBSTACLE:
+            self.decel_active = False
+            steer_cmd = self._clamp_steer(self.auto_steer_angle_rrt_caution)
+            throttle_cmd = self.auto_throttle_static_obstacle
+        else:
+            # MISSION_RRT
+            self.decel_active = False
+            steer_cmd = self._clamp_steer(self.auto_steer_angle_rrt)
+            throttle_cmd = self._map_throttle_inverse_by_steer(
+                steer_cmd,
+                self.auto_throttle_rrt_max,
+                self.auto_throttle_rrt_min,
+            )
 
-        # 안전장치: 0.0 <= auto_throttle <= auto_throttle_max
+        # 모든 state에서 publish 직전 최종 steer 안전장치 재적용
+        steer_cmd = self._clamp_steer(steer_cmd)
+
+        # throttle 공통 안전장치
         throttle_cmd = self._clamp(throttle_cmd, 0.0, self.auto_throttle_max)
         self.current_auto_throttle = throttle_cmd
 
@@ -188,6 +270,7 @@ class DecisionNode(Node):
         throttle_msg = Float32()
         throttle_msg.data = float(throttle_cmd)
         self.auto_throttle_pub.publish(throttle_msg)
+        self._maybe_log_status(steer_cmd, throttle_cmd)
 
 
 def main(args=None):
