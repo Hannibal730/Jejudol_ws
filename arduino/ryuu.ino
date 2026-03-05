@@ -40,7 +40,7 @@ volatile uint32_t accel_last_us = 0;
 
 int DIR1 = 10, PWM1 = 11, DIR2 = 6, PWM2 = 7, DIR3 = 8, PWM3 = 9;
 int POTPin = A0;
-#define MIN_DRIVE_PWM 60
+#define MIN_DRIVE_PWM 0
 #define MAX_DRIVE_PWM 250
 
 #define SERIAL_BUFFER_SIZE 48
