@@ -163,7 +163,7 @@ class LaneFollowerNode(Node):
             self.image_callback,
             qos_profile_sensor_data
         )
-        self.sub_throttle = self.create_subscription(Float32, 'auto_throttle', self.throttle_callback, 1)
+        #self.sub_throttle = self.create_subscription(Float32, 'auto_throttle', self.throttle_callback, 1)
 
         #cv2.namedWindow("Original Camera View", cv2.WINDOW_AUTOSIZE)
         #cv2.namedWindow("Roboflow Detections (on BEV)", cv2.WINDOW_AUTOSIZE)
