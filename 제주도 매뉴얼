@@ -1,0 +1,15 @@
+모든 노드 끈 채로 아두이노 업로드. 만약 안 된다면 시리얼 브릿지 노드를 켰다가 끄고 업로드 재시도. 업로드 성공한 이후에 시리얼 브릿지 노드 켜기
+4. ros2 run serial_bridge serial_bridge
+
+
+ros2 run voxelnext_ros2 lidar_cone_detect.py
+
+ros2 run rrt_planning main.py
+ros2 run rrt_planning rrt_purepursuit.py
+ros2 run rrt_planning rrt_caution_purepursuit
+
+ros2 launch utm_tf tf_gps_csv.launch.py
+
+ros2 launch gps_planning f9r_roi_path.launch.py
+ros2 run gps_planning gps_purepursuit.py
+

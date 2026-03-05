@@ -2,3 +2,4 @@ python -m pip install backports.tarfile
 sudo apt install libasio-dev
 sudo apt install ros-humble-diagnostic-updater
 sudo apt install ros-humble-nmea-msgs
+sudo apt-get install -y python3-serial
