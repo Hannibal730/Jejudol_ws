@@ -3,6 +3,7 @@ import glob
 from setuptools import setup
 
 package_name = 'ntrip_client'
+launch_files = [path for path in glob.glob('launch/*') if os.path.isfile(path)]
 
 setup(
     name=package_name,
@@ -11,7 +12,7 @@ setup(
     package_dir={'': 'src'},
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
-        (os.path.join('share', package_name), ['package.xml', *glob.glob('launch/*')]),
+        (os.path.join('share', package_name), ['package.xml', *launch_files]),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
