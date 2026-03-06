@@ -27,8 +27,20 @@ def generate_launch_description():
     config_dir = get_package_share_directory('myahrs_ros2_driver')
     config_file = os.path.join(config_dir, 'config', 'config.yaml')
 
+    serial_port = LaunchConfiguration('serial_port')
+    baud_rate = LaunchConfiguration('baud_rate')
     rviz_config_file = LaunchConfiguration('rviz_config_file')
     use_rviz = LaunchConfiguration('use_rviz')
+
+    declare_serial_port_cmd = DeclareLaunchArgument(
+        'serial_port',
+        default_value='/dev/myahrs_imu',
+        description='Serial device path for myAHRS+')
+
+    declare_baud_rate_cmd = DeclareLaunchArgument(
+        'baud_rate',
+        default_value='115200',
+        description='Serial baud rate for myAHRS+')
 
     declare_rviz_config_file_cmd = DeclareLaunchArgument(
         'rviz_config_file',
@@ -37,7 +49,7 @@ def generate_launch_description():
 
     declare_use_rviz_cmd = DeclareLaunchArgument(
         'use_rviz',
-        default_value='True',
+        default_value='False',
         description='Whether to start RVIZ')
 
     rviz_cmd = Node(
@@ -49,15 +61,17 @@ def generate_launch_description():
         output='screen')
 
     return LaunchDescription([
+        declare_serial_port_cmd,
+        declare_baud_rate_cmd,
+        declare_rviz_config_file_cmd,
+        declare_use_rviz_cmd,
         Node(
             package='myahrs_ros2_driver',
             executable='myahrs_ros2_driver',
             name='myahrs_ros2_driver',
             output='screen',
-            arguments=['/dev/ttyACM0', '115200'],
+            arguments=[serial_port, baud_rate],
             parameters=[config_file]
         ),
-        declare_rviz_config_file_cmd,
-        declare_use_rviz_cmd,
         rviz_cmd,
     ])
