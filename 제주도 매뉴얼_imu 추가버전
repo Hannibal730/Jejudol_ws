@@ -10,11 +10,12 @@
 1. RTK 마운트 포인트 수정
 src/RTK_GPS_NTRIP/ntrip_client/launch/ntrip_client_launch.py 에서 DeclareLaunchArgument('mountpoint', default_value='SUWN-RTCM31'),  수정  SONP-RTCM31
 
-2. 실제 f9r, f9p 작동 (src/RTK_GPS_NTRIP/ublox_gps/launch)
+2*. 실제 f9r, f9p, imu 작동
 ros2 launch ublox_gps ublox_f9p_launch.py
 ros2 launch ublox_gps ublox_f9r_launch.py
 ros2 run fix2nmea fix2nmea
 ros2 launch ntrip_client ntrip_client_launch.py
+ros2 launch myahrs_ros2_driver myahrs_ros2_driver.launch.py
 
 
 아래 3~5단계는 csv맵을 새로 딸 때만 사용
