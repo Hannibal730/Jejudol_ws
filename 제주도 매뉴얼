@@ -1,4 +1,29 @@
+================포트 번호================
 
+0 아두이노
+1 f9p
+2 f9r
+3 카메라
+
+================기본 세팅================
+
+1. RTK 마운트 포인트 수정
+src/RTK_GPS_NTRIP/ntrip_client/launch/ntrip_client_launch.py 에서 DeclareLaunchArgument('mountpoint', default_value='SUWN-RTCM31'),  수정  SONP-RTCM31
+
+2. 실제 f9r, f9p 작동
+src/RTK_GPS_NTRIP/ublox_gps/launch
+ros2 launch ublox_gps ublox_f9p_launch.py
+ros2 launch ublox_gps ublox_f9r_launch.py
+ros2 run fix2nmea fix2nmea
+ros2 launch ntrip_client ntrip_client_launch.py
+
+
+아래 3~5단계는 csv맵을 새로 딸 때만 사용
+3. ros2 bag record /f9r/fix
+4. src/utm_tf/src/f9r_to_csv.py 에서 백파일 경로 지정하고 실행하여 csv 맵을 data폴더에 저장
+5. src/utm_tf/config/tf_gps_csv.yaml 에서 새로 저장한 csv맵으로 지정.
+
+================노드 세팅================
 rv
 ros2 run voxelnext_ros2 lidar_cone_detect.py
 
@@ -16,3 +41,25 @@ ros2 run yolotl_ros2 lane_follower
 ros2 run decision_maker decision
 
 ros2 run serial_bridge serial_bridge
+
+================자율주행================
+
+리모컨 켜서 오토 모드.
+
+차량 멈출 땐 판단노드 터미널에서 스페이스바.
+
+================================
+
+두 GPS의 사용 위성 수 보는 방법
+
+값 자체는 num_sv (NavPVT) 또는 num_svs (NavSAT)입니다.
+NavPVT.msg (line 73), NavSAT.msg (line 11)
+현재 launch는 fix만 f9p/f9r로 remap해서, 위성수 토픽은 분리되어 있지 않습니다.
+ublox_f9p_launch.py (line 51), ublox_f9r_launch.py (line 51)
+실무적으로는:
+
+publish.nav.pvt: true 켜고
+/ublox_gps_node/navpvt를 /f9p/navpvt, /f9r/navpvt로 remap
+ros2 topic echo /f9p/navpvt --field num_sv, .../f9r/navpvt --field num_sv
+이 방식이 가장 깔끔합니다.
+
