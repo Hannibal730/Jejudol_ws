@@ -69,15 +69,15 @@ UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("image_height", 480);
   this->declare_parameter("image_width", 640);
   this->declare_parameter("io_method", "mmap");
-  this->declare_parameter("pixel_format", "yuyv");
+  this->declare_parameter("pixel_format", "raw_mjpeg");
   this->declare_parameter("av_device_format", "YUV422P");
-  this->declare_parameter("video_device", "/dev/video0");
+  this->declare_parameter("video_device", "/dev/video2");
   this->declare_parameter("brightness", 50);  // 0-255, -1 "leave alone"
   this->declare_parameter("contrast", -1);    // 0-255, -1 "leave alone"
   this->declare_parameter("saturation", -1);  // 0-255, -1 "leave alone"
   this->declare_parameter("sharpness", -1);   // 0-255, -1 "leave alone"
   this->declare_parameter("gain", -1);        // 0-100?, -1 "leave alone"
-  this->declare_parameter("auto_white_balance", true);
+  this->declare_parameter("auto_white_balance", false);
   this->declare_parameter("white_balance", 4000);
   this->declare_parameter("autoexposure", true);
   this->declare_parameter("exposure", 100);
