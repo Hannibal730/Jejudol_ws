@@ -3,7 +3,7 @@
   <name>voxelnext_ros2</name>
   <version>0.0.0</version>
   <description>The voxelnext_ros2 package</description>
-  <maintainer email="cds730@naver.com">hannibal</maintainer>
+  <maintainer email="cds730@naver.com">Daeseung CHOI</maintainer>
   <license>Apache 2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

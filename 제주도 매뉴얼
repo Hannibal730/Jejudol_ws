@@ -1,20 +1,14 @@
-================포트 번호================
-
-0 아두이노
-1 f9p
-2 f9r
-4 카메라
-
 ================기본 세팅================
 
 1. RTK 마운트 포인트 수정
-src/RTK_GPS_NTRIP/ntrip_client/launch/ntrip_client_launch.py 에서 DeclareLaunchArgument('mountpoint', default_value='SUWN-RTCM31'),  수정  SONP-RTCM31
+src/RTK_GPS_NTRIP/ntrip_client/launch/ntrip_client_launch.py 에서 DeclareLaunchArgument('mountpoint', default_value='SUWN-RTCM31')
 
-2. 실제 f9r, f9p 작동 (src/RTK_GPS_NTRIP/ublox_gps/launch)
+2*. 실제 f9r, f9p, imu 작동
 ros2 launch ublox_gps ublox_f9p_launch.py
 ros2 launch ublox_gps ublox_f9r_launch.py
 ros2 run fix2nmea fix2nmea
 ros2 launch ntrip_client ntrip_client_launch.py
+ros2 launch myahrs_ros2_driver myahrs_ros2_driver.launch.py
 
 
 아래 3~5단계는 csv맵을 새로 딸 때만 사용
@@ -61,4 +55,3 @@ publish.nav.pvt: true 켜고
 /ublox_gps_node/navpvt를 /f9p/navpvt, /f9r/navpvt로 remap
 ros2 topic echo /f9p/navpvt --field num_sv, .../f9r/navpvt --field num_sv
 이 방식이 가장 깔끔합니다.
-
