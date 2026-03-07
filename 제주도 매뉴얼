@@ -55,3 +55,5 @@ publish.nav.pvt: true 켜고
 /ublox_gps_node/navpvt를 /f9p/navpvt, /f9r/navpvt로 remap
 ros2 topic echo /f9p/navpvt --field num_sv, .../f9r/navpvt --field num_sv
 이 방식이 가장 깔끔합니다.
+
+블루투스 마우스 밑에가 8, 위에가 9

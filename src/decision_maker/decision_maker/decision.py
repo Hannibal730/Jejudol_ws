@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import select
+import subprocess
 import sys
 import termios
 import threading
@@ -29,6 +31,12 @@ DEFAULTS = {
     'auto_throttle_static_obstacle': 0.4,
     'num_static_obstacle_threshold': 4,
     'spacebar_deceleration_sec': 5.0,
+    'manual_stop_use_spacebar': True,
+    'manual_stop_use_mouse': True,
+    'mouse_button_code': 8,
+    'mouse_trigger_on_release': False,
+    'mouse_device_id': -1,
+    'mouse_device_name': 'Logitech USB Receiver Mouse',
 }
 
 # mission state 이름(요청 반영)
@@ -83,6 +91,12 @@ class DecisionNode(Node):
         self.auto_throttle_static_obstacle = float(self.get_parameter('auto_throttle_static_obstacle').value)
         self.num_static_obstacle_threshold = int(self.get_parameter('num_static_obstacle_threshold').value)
         self.spacebar_deceleration_sec = float(self.get_parameter('spacebar_deceleration_sec').value)
+        self.manual_stop_use_spacebar = bool(self.get_parameter('manual_stop_use_spacebar').value)
+        self.manual_stop_use_mouse = bool(self.get_parameter('manual_stop_use_mouse').value)
+        self.mouse_button_code = int(self.get_parameter('mouse_button_code').value)
+        self.mouse_trigger_on_release = bool(self.get_parameter('mouse_trigger_on_release').value)
+        self.mouse_device_id = int(self.get_parameter('mouse_device_id').value)
+        self.mouse_device_name = str(self.get_parameter('mouse_device_name').value)
 
         # 파라미터 안전 보정
         if self.publish_rate_hz <= 0.0:
@@ -101,6 +115,8 @@ class DecisionNode(Node):
             self.num_static_obstacle_threshold = DEFAULTS['num_static_obstacle_threshold']
         if self.spacebar_deceleration_sec <= 0.0:
             self.spacebar_deceleration_sec = DEFAULTS['spacebar_deceleration_sec']
+        if self.mouse_button_code <= 0:
+            self.mouse_button_code = DEFAULTS['mouse_button_code']
         self.steer_limit = max(0.001, self.auto_steer_angle_abs_max - 1e-3)
 
         # 입력 상태
@@ -133,6 +149,10 @@ class DecisionNode(Node):
         self._kbd_thread = None
         self._stdin_fd = None
         self._stdin_attr_backup = None
+        self._mouse_stop = False
+        self._mouse_thread = None
+        self._mouse_proc = None
+        self._resolved_mouse_device_id = None
 
         # 입력 토픽 구독
         self.create_subscription(Bool, '/lane_detection_status', self._lane_detection_cb, 10)
@@ -147,7 +167,7 @@ class DecisionNode(Node):
         self.auto_steer_pub = self.create_publisher(Float32, '/auto_steer_angle', 10)
         self.auto_throttle_pub = self.create_publisher(Float32, '/auto_throttle', 10)
 
-        self._start_keyboard_listener()
+        self._start_manual_stop_listener()
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._on_timer)
 
         self.get_logger().info(
@@ -227,12 +247,27 @@ class DecisionNode(Node):
         self.spacebar_stop_start_throttle = max(0.0, self.current_auto_throttle)
         self._spacebar_stop_done_logged = False
         self.get_logger().warn(
-            '[SPACE] stop requested: /auto_throttle %.3f -> 0.0 in %.1fs'
+            '[MANUAL-STOP] stop requested: /auto_throttle %.3f -> 0.0 in %.1fs'
             % (
                 self.spacebar_stop_start_throttle,
                 self.spacebar_deceleration_sec,
             )
         )
+
+    def _deactivate_spacebar_stop(self):
+        if not self.spacebar_stop_active:
+            return
+        self.spacebar_stop_active = False
+        self._spacebar_stop_done_logged = False
+        self.get_logger().warn(
+            '[MANUAL-STOP] stop profile canceled: returning to mission throttle control'
+        )
+
+    def _toggle_spacebar_stop(self, now_sec: float):
+        if self.spacebar_stop_active:
+            self._deactivate_spacebar_stop()
+        else:
+            self._activate_spacebar_stop(now_sec)
 
     def _compute_spacebar_stop_throttle(self, now_sec: float) -> float:
         elapsed = now_sec - self.spacebar_stop_start_time
@@ -240,13 +275,13 @@ class DecisionNode(Node):
         throttle = self.spacebar_stop_start_throttle * (1.0 - progress)
         if (progress >= 1.0) and (not self._spacebar_stop_done_logged):
             self._spacebar_stop_done_logged = True
-            self.get_logger().warn('[SPACE] stop profile completed: /auto_throttle=0.000')
+            self.get_logger().warn('[MANUAL-STOP] stop profile completed: /auto_throttle=0.000')
         return throttle
 
     def _start_keyboard_listener(self):
         if not sys.stdin.isatty():
             self.get_logger().warn(
-                '[SPACE] keyboard listener disabled (stdin is not a TTY).'
+                '[KEYBOARD] listener disabled (stdin is not a TTY).'
             )
             return
 
@@ -255,7 +290,7 @@ class DecisionNode(Node):
             self._stdin_attr_backup = termios.tcgetattr(self._stdin_fd)
         except Exception as exc:
             self.get_logger().warn(
-                f'[SPACE] keyboard listener init failed: {exc}'
+                f'[KEYBOARD] listener init failed: {exc}'
             )
             self._stdin_fd = None
             self._stdin_attr_backup = None
@@ -265,8 +300,84 @@ class DecisionNode(Node):
         self._kbd_thread = threading.Thread(target=self._keyboard_loop, daemon=True)
         self._kbd_thread.start()
         self.get_logger().info(
-            '[SPACE] press SPACE in this terminal to linearly decelerate /auto_throttle to 0.0'
+            '[KEYBOARD] press SPACE in this terminal to linearly decelerate /auto_throttle to 0.0'
         )
+
+    def _resolve_mouse_device_id(self):
+        if self.mouse_device_id >= 0:
+            return self.mouse_device_id
+
+        try:
+            output = subprocess.check_output(['xinput', 'list', '--short'], text=True)
+        except Exception as exc:
+            self.get_logger().warn(
+                f'[MOUSE] failed to run xinput list --short: {exc}'
+            )
+            return None
+
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if (self.mouse_device_name in line) and ('[slave  pointer' in line):
+                match = re.search(r'id=(\d+)', line)
+                if match is not None:
+                    return int(match.group(1))
+        return None
+
+    def _start_mouse_listener(self):
+        device_id = self._resolve_mouse_device_id()
+        if device_id is None:
+            self.get_logger().warn(
+                '[MOUSE] listener disabled: target pointer device not found. '
+                'set mouse_device_id manually or check mouse_device_name.'
+            )
+            return
+
+        cmd = ['xinput', 'test', str(device_id)]
+        try:
+            self._mouse_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+        except Exception as exc:
+            self.get_logger().warn(
+                f'[MOUSE] listener init failed: {exc}'
+            )
+            self._mouse_proc = None
+            return
+
+        if self._mouse_proc.stdout is None:
+            self.get_logger().warn('[MOUSE] listener init failed: no stdout pipe.')
+            return
+
+        self._resolved_mouse_device_id = device_id
+        self._mouse_stop = False
+        self._mouse_thread = threading.Thread(target=self._mouse_loop, daemon=True)
+        self._mouse_thread.start()
+        trigger_event = 'release' if self.mouse_trigger_on_release else 'press'
+        self.get_logger().info(
+            '[MOUSE] listening xinput id=%d, trigger=button %s %d'
+            % (
+                self._resolved_mouse_device_id,
+                trigger_event,
+                self.mouse_button_code,
+            )
+        )
+
+    def _start_manual_stop_listener(self):
+        enabled = False
+        if self.manual_stop_use_spacebar:
+            self._start_keyboard_listener()
+            enabled = True
+        if self.manual_stop_use_mouse:
+            self._start_mouse_listener()
+            enabled = True
+        if not enabled:
+            self.get_logger().warn(
+                '[MANUAL-STOP] all manual stop listeners are disabled.'
+            )
 
     def _restore_terminal(self):
         if (self._stdin_fd is None) or (self._stdin_attr_backup is None):
@@ -294,6 +405,30 @@ class DecisionNode(Node):
             pass
         finally:
             self._restore_terminal()
+
+    def _mouse_loop(self):
+        if (self._mouse_proc is None) or (self._mouse_proc.stdout is None):
+            return
+
+        target_event = 'release' if self.mouse_trigger_on_release else 'press'
+        try:
+            while not self._mouse_stop:
+                line = self._mouse_proc.stdout.readline()
+                if line == '':
+                    if self._mouse_proc.poll() is not None:
+                        break
+                    continue
+                normalized = line.strip().lower()
+                matched = re.match(r'^button\s+(press|release)\s+(\d+)$', normalized)
+                if matched is None:
+                    continue
+                event_name = matched.group(1)
+                button_code = int(matched.group(2))
+                if (event_name == target_event) and (button_code == self.mouse_button_code):
+                    with self._spacebar_pending_lock:
+                        self._spacebar_pending = True
+        except Exception:
+            pass
 
     def _map_throttle_inverse_by_steer(self, steer_cmd: float, throttle_max: float, throttle_min: float) -> float:
         # |steer|=0 에 가까울수록 throttle_max
@@ -347,7 +482,7 @@ class DecisionNode(Node):
     def _on_timer(self):
         now_sec = self._now_sec()
         if self._consume_spacebar_request():
-            self._activate_spacebar_stop(now_sec)
+            self._toggle_spacebar_stop(now_sec)
 
         self.emergency_active = self._compute_emergency_active(now_sec)
         state = self._get_mission_state()
@@ -410,6 +545,21 @@ class DecisionNode(Node):
         self._kbd_stop = True
         if self._kbd_thread is not None:
             self._kbd_thread.join(timeout=0.3)
+
+        self._mouse_stop = True
+        if self._mouse_proc is not None:
+            try:
+                self._mouse_proc.terminate()
+            except Exception:
+                pass
+        if self._mouse_thread is not None:
+            self._mouse_thread.join(timeout=0.5)
+        if self._mouse_proc is not None and self._mouse_proc.poll() is None:
+            try:
+                self._mouse_proc.kill()
+            except Exception:
+                pass
+
         self._restore_terminal()
         super().destroy_node()
 
