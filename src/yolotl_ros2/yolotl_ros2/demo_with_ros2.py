@@ -129,7 +129,7 @@ class LaneFollowerNode(Node):
         # [디벨롭 적용] 동적 LD 및 조향각 제한 관련 파라미터
         self.MIN_LOOKAHEAD_DISTANCE = 1.0
         self.MAX_LOOKAHEAD_DISTANCE = 2.0
-        self.MAX_STEER_DEG = 25.0
+        self.MAX_STEER_DEG = 23.0
         self.prev_steer_deg = 0.0
 
         # =============================================================================
