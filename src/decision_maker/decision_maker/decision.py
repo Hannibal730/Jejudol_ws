@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 
 import os
-import re
 import select
-import subprocess
 import sys
 import termios
 import threading
@@ -30,13 +28,8 @@ DEFAULTS = {
     'auto_throttle_gps': 0.2,
     'auto_throttle_static_obstacle': 0.4,
     'num_static_obstacle_threshold': 4,
-    'mannual_deceleration_sec': 2.0,
+    'mannual_deceleration_sec': 2.5,
     'manual_stop_use_spacebar': True,
-    'manual_stop_use_mouse': True,
-    'mouse_button_code': 8,
-    'mouse_trigger_on_release': False,
-    'mouse_device_id': -1,
-    'mouse_device_name': 'Logitech USB Receiver Mouse',
 }
 
 # mission state 이름(요청 반영)
@@ -92,11 +85,6 @@ class DecisionNode(Node):
         self.num_static_obstacle_threshold = int(self.get_parameter('num_static_obstacle_threshold').value)
         self.mannual_deceleration_sec = float(self.get_parameter('mannual_deceleration_sec').value)
         self.manual_stop_use_spacebar = bool(self.get_parameter('manual_stop_use_spacebar').value)
-        self.manual_stop_use_mouse = bool(self.get_parameter('manual_stop_use_mouse').value)
-        self.mouse_button_code = int(self.get_parameter('mouse_button_code').value)
-        self.mouse_trigger_on_release = bool(self.get_parameter('mouse_trigger_on_release').value)
-        self.mouse_device_id = int(self.get_parameter('mouse_device_id').value)
-        self.mouse_device_name = str(self.get_parameter('mouse_device_name').value)
 
         # 파라미터 안전 보정
         if self.publish_rate_hz <= 0.0:
@@ -115,8 +103,6 @@ class DecisionNode(Node):
             self.num_static_obstacle_threshold = DEFAULTS['num_static_obstacle_threshold']
         if self.mannual_deceleration_sec <= 0.0:
             self.mannual_deceleration_sec = DEFAULTS['mannual_deceleration_sec']
-        if self.mouse_button_code <= 0:
-            self.mouse_button_code = DEFAULTS['mouse_button_code']
         self.steer_limit = max(0.001, self.auto_steer_angle_abs_max - 1e-3)
 
         # 입력 상태
@@ -149,10 +135,6 @@ class DecisionNode(Node):
         self._kbd_thread = None
         self._stdin_fd = None
         self._stdin_attr_backup = None
-        self._mouse_stop = False
-        self._mouse_thread = None
-        self._mouse_proc = None
-        self._resolved_mouse_device_id = None
 
         # 입력 토픽 구독
         self.create_subscription(Bool, '/lane_detection_status', self._lane_detection_cb, 10)
@@ -303,80 +285,13 @@ class DecisionNode(Node):
             '[KEYBOARD] press SPACE in this terminal to linearly decelerate /auto_throttle to 0.0'
         )
 
-    def _resolve_mouse_device_id(self):
-        if self.mouse_device_id >= 0:
-            return self.mouse_device_id
-
-        try:
-            output = subprocess.check_output(['xinput', 'list', '--short'], text=True)
-        except Exception as exc:
-            self.get_logger().warn(
-                f'[MOUSE] failed to run xinput list --short: {exc}'
-            )
-            return None
-
-        for raw_line in output.splitlines():
-            line = raw_line.strip()
-            if (self.mouse_device_name in line) and ('[slave  pointer' in line):
-                match = re.search(r'id=(\d+)', line)
-                if match is not None:
-                    return int(match.group(1))
-        return None
-
-    def _start_mouse_listener(self):
-        device_id = self._resolve_mouse_device_id()
-        if device_id is None:
-            self.get_logger().warn(
-                '[MOUSE] listener disabled: target pointer device not found. '
-                'set mouse_device_id manually or check mouse_device_name.'
-            )
-            return
-
-        cmd = ['xinput', 'test', str(device_id)]
-        try:
-            self._mouse_proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-        except Exception as exc:
-            self.get_logger().warn(
-                f'[MOUSE] listener init failed: {exc}'
-            )
-            self._mouse_proc = None
-            return
-
-        if self._mouse_proc.stdout is None:
-            self.get_logger().warn('[MOUSE] listener init failed: no stdout pipe.')
-            return
-
-        self._resolved_mouse_device_id = device_id
-        self._mouse_stop = False
-        self._mouse_thread = threading.Thread(target=self._mouse_loop, daemon=True)
-        self._mouse_thread.start()
-        trigger_event = 'release' if self.mouse_trigger_on_release else 'press'
-        self.get_logger().info(
-            '[MOUSE] listening xinput id=%d, trigger=button %s %d'
-            % (
-                self._resolved_mouse_device_id,
-                trigger_event,
-                self.mouse_button_code,
-            )
-        )
-
     def _start_manual_stop_listener(self):
-        enabled = False
         if self.manual_stop_use_spacebar:
             self._start_keyboard_listener()
-            enabled = True
-        if self.manual_stop_use_mouse:
-            self._start_mouse_listener()
-            enabled = True
-        if not enabled:
+            return
+        if not self.manual_stop_use_spacebar:
             self.get_logger().warn(
-                '[MANUAL-STOP] all manual stop listeners are disabled.'
+                '[MANUAL-STOP] keyboard listener is disabled.'
             )
 
     def _restore_terminal(self):
@@ -405,30 +320,6 @@ class DecisionNode(Node):
             pass
         finally:
             self._restore_terminal()
-
-    def _mouse_loop(self):
-        if (self._mouse_proc is None) or (self._mouse_proc.stdout is None):
-            return
-
-        target_event = 'release' if self.mouse_trigger_on_release else 'press'
-        try:
-            while not self._mouse_stop:
-                line = self._mouse_proc.stdout.readline()
-                if line == '':
-                    if self._mouse_proc.poll() is not None:
-                        break
-                    continue
-                normalized = line.strip().lower()
-                matched = re.match(r'^button\s+(press|release)\s+(\d+)$', normalized)
-                if matched is None:
-                    continue
-                event_name = matched.group(1)
-                button_code = int(matched.group(2))
-                if (event_name == target_event) and (button_code == self.mouse_button_code):
-                    with self._spacebar_pending_lock:
-                        self._spacebar_pending = True
-        except Exception:
-            pass
 
     def _map_throttle_inverse_by_steer(self, steer_cmd: float, throttle_max: float, throttle_min: float) -> float:
         # |steer|=0 에 가까울수록 throttle_max
@@ -546,27 +437,13 @@ class DecisionNode(Node):
         if self._kbd_thread is not None:
             self._kbd_thread.join(timeout=0.3)
 
-        self._mouse_stop = True
-        if self._mouse_proc is not None:
-            try:
-                self._mouse_proc.terminate()
-            except Exception:
-                pass
-        if self._mouse_thread is not None:
-            self._mouse_thread.join(timeout=0.5)
-        if self._mouse_proc is not None and self._mouse_proc.poll() is None:
-            try:
-                self._mouse_proc.kill()
-            except Exception:
-                pass
-
         self._restore_terminal()
         super().destroy_node()
 
 
 def main(args=None):
-    # 메시지 본문만 출력: [INFO] [timestamp] [node_name] 프리픽스 숨김
-    os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '{message}'
+    # 모든 로그 메시지 맨 앞에 시간을 붙여 출력
+    os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '[{time}] {message}'
     rclpy.init(args=args)
     node = DecisionNode()
     try:
