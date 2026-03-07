@@ -474,7 +474,7 @@ class DecisionNode(Node):
 
         self.get_logger().info(
             f'mission_state={self.current_mission_state}, '
-            f'emergency_raw={self.emergency_raw}, emergency_active={self.emergency_active}, '
+            f'emergency={self.emergency_raw}, emergency_off_delay={self.emergency_active}, '
             f'/auto_steer_angle={steer_cmd:.3f}, '
             f'/auto_throttle={throttle_cmd:.3f}'
         )
@@ -565,6 +565,8 @@ class DecisionNode(Node):
 
 
 def main(args=None):
+    # 메시지 본문만 출력: [INFO] [timestamp] [node_name] 프리픽스 숨김
+    os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '{message}'
     rclpy.init(args=args)
     node = DecisionNode()
     try:
