@@ -121,7 +121,7 @@ class LaneFollowerNode(Node):
         self.tracked_center_path = {'coeff': None}
         self.SMOOTHING_ALPHA = 0.6
         self.MAX_LANE_AGE = 7
-        self.L = 0.73
+        self.L = 0.73  #후륜축,전륜축 중심간거리
 
         self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4, 0.6
         self.current_throttle = self.THROTTLE_MIN
@@ -134,9 +134,9 @@ class LaneFollowerNode(Node):
 
         # =============================================================================
         # ✅ LD & Steering 디벨롭 파라미터/상태
-        self.CURV_A_REF = 1e-4
-        self.W_CURVE = 0.7
-        self.W_SPEED = 0.3
+        self.CURV_A_REF = 5e-4
+        self.W_CURVE = 0.5
+        self.W_SPEED = 0.5
         self.LD_ALPHA = 0.7
         self.ld_filtered = self.MAX_LOOKAHEAD_DISTANCE
         self.MAX_STEER_RATE = 6.0
@@ -411,8 +411,9 @@ class LaneFollowerNode(Node):
                 # ====================================================================
                 a = abs(final_center_coeff[0])
                 curv_norm = np.clip(a / (self.CURV_A_REF + 1e-12), 0.0, 1.0)
-                LD_curve = self.MAX_LOOKAHEAD_DISTANCE - (self.MAX_LOOKAHEAD_DISTANCE - self.MIN_LOOKAHEAD_DISTANCE) * curv_norm
-
+                curv_soft = curv_norm ** 2
+                LD_curve = self.MAX_LOOKAHEAD_DISTANCE - (self.MAX_LOOKAHEAD_DISTANCE - self.MIN_LOOKAHEAD_DISTANCE) * curv_soft
+                
                 v_norm = (self.current_throttle - self.THROTTLE_MIN) / (self.THROTTLE_MAX - self.THROTTLE_MIN + 1e-6)
                 v_norm = np.clip(v_norm, 0.0, 1.0)
                 LD_speed = self.MIN_LOOKAHEAD_DISTANCE + (self.MAX_LOOKAHEAD_DISTANCE - self.MIN_LOOKAHEAD_DISTANCE) * v_norm
@@ -479,8 +480,7 @@ class LaneFollowerNode(Node):
         cv2.putText(bev_im_for_drawing, f"Lane Detected: {lane_detected_bool}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
         cv2.putText(bev_im_for_drawing, f"Lookahead: {dynamic_lookahead_distance:.2f}m", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-        cv2.putText(bev_im_for_drawing, f"Throttle: {self.current_throttle:.2f}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-
+       
         original_with_lanes = self.draw_lanes_on_original(im0s, final_left_coeff, final_right_coeff, self.tracked_center_path['coeff'])
 
         msg = CompressedImage()
