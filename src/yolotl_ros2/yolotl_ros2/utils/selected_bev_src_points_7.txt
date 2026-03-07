@@ -1,0 +1,5 @@
+# Selected BEV Points (Y-Auto)
+7, 428 # 1 (L-Bot)
+639, 428 # 2 (R-Bot)
+135, 281 # 3 (L-Top)
+561, 281 # 4 (R-Top)

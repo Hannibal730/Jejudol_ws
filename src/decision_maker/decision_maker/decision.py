@@ -23,7 +23,7 @@ DEFAULTS = {
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,
     'auto_throttle_moon_course': 0.2,
-    'auto_throttle_yolotl_max': 0.4,
+    'auto_throttle_yolotl_max': 0.25,
     'auto_throttle_yolotl_min': 0.1,
     'auto_throttle_rrt_max': 0.7,
     'auto_throttle_rrt_min': 0.4,

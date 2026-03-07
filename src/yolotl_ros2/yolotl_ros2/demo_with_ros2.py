@@ -116,7 +116,7 @@ class LaneFollowerNode(Node):
             sys.exit(1)
 
         # 3. 주행 파라미터
-        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0025, 1.25, 0.003578125
+        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0025, 2.100, 0.003578125
         self.tracked_lanes = {'left': {'coeff': None, 'age': 0}, 'right': {'coeff': None, 'age': 0}}
         self.tracked_center_path = {'coeff': None}
         self.SMOOTHING_ALPHA = 0.6
@@ -127,8 +127,8 @@ class LaneFollowerNode(Node):
         self.current_throttle = self.THROTTLE_MIN
 
         # [디벨롭 적용] 동적 LD 및 조향각 제한 관련 파라미터
-        self.MIN_LOOKAHEAD_DISTANCE = 1.0
-        self.MAX_LOOKAHEAD_DISTANCE = 2.0
+        self.MIN_LOOKAHEAD_DISTANCE = 1.5
+        self.MAX_LOOKAHEAD_DISTANCE = 3.0
         self.MAX_STEER_DEG = 23.0
         self.prev_steer_deg = 0.0
 
@@ -163,7 +163,7 @@ class LaneFollowerNode(Node):
             self.image_callback,
             qos_profile_sensor_data
         )
-        #self.sub_throttle = self.create_subscription(Float32, 'auto_throttle', self.throttle_callback, 1)
+        self.sub_throttle = self.create_subscription(Float32, 'auto_throttle', self.throttle_callback, 1)
 
         #cv2.namedWindow("Original Camera View", cv2.WINDOW_AUTOSIZE)
         #cv2.namedWindow("Roboflow Detections (on BEV)", cv2.WINDOW_AUTOSIZE)
@@ -492,7 +492,7 @@ class LaneFollowerNode(Node):
             msg.data = encoded_img.tobytes()
             self.pub_drivable_area.publish(msg)
 
-        #cv2.imshow("Original Camera View", original_with_lanes)
+        cv2.imshow("Original Camera View", original_with_lanes)
         #cv2.imshow("Roboflow Detections (on BEV)", annotated_frame)
         cv2.imshow("Final Path & Logs (on BEV)", bev_im_for_drawing)
         cv2.waitKey(1)
@@ -503,7 +503,7 @@ def main(args=None):
 
     package_share_directory = get_package_share_directory('yolotl_ros2')
     default_weights = os.path.join(package_share_directory, 'config', 'weights3.pt')
-    default_params = os.path.join(package_share_directory, 'config', 'bev_params_7.npz')
+    default_params = os.path.join(package_share_directory, 'config', 'bev_params_0307.npz')
 
     parser.add_argument('--weights', default=default_weights, help='Path to model weights')
     parser.add_argument('--param-file', default=default_params, help='Path to BEV parameters file')
