@@ -18,7 +18,7 @@ from std_msgs.msg import Bool, Float32, Int8
 DEFAULTS = {
     'publish_rate_hz': 20.0,
     'log_rate_hz': 1.0,
-    'deceleration_sec': 1.5,
+    'emergency_deceleration_sec': 1.5,
     'emergency_off_delay_sec': 0.8,
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,
@@ -30,7 +30,7 @@ DEFAULTS = {
     'auto_throttle_gps': 0.2,
     'auto_throttle_static_obstacle': 0.4,
     'num_static_obstacle_threshold': 4,
-    'spacebar_deceleration_sec': 5.0,
+    'mannual_deceleration_sec': 2.0,
     'manual_stop_use_spacebar': True,
     'manual_stop_use_mouse': True,
     'mouse_button_code': 8,
@@ -60,7 +60,7 @@ MISSION_RRT = 'rrt'
 # 4)   num_lidar_cone>=threshold -> mission_state=static_obstacle
 #      num_lidar_cone<threshold  -> mission_state=rrt
 # state별 제어
-# - emergency       : steer=yolotl, throttle은 현재값에서 deceleration_sec 동안 0.0으로 선형 감속
+# - emergency       : steer=yolotl, throttle은 현재값에서 emergency_deceleration_sec 동안 0.0으로 선형 감속
 # - moon_course     : steer=rrt_caution, throttle=auto_throttle_moon_course(고정)
 # - lane            : steer=yolotl, throttle=[yolotl_min, yolotl_max] 역비례 매핑
 # - gps             : steer=gps, throttle=auto_throttle_gps(고정)
@@ -78,7 +78,7 @@ class DecisionNode(Node):
 
         self.publish_rate_hz = float(self.get_parameter('publish_rate_hz').value)
         self.log_rate_hz = float(self.get_parameter('log_rate_hz').value)
-        self.deceleration_sec = float(self.get_parameter('deceleration_sec').value)
+        self.emergency_deceleration_sec = float(self.get_parameter('emergency_deceleration_sec').value)
         self.emergency_off_delay_sec = float(self.get_parameter('emergency_off_delay_sec').value)
         self.auto_steer_angle_abs_max = float(self.get_parameter('auto_steer_angle_abs_max').value)
         self.auto_throttle_max = float(self.get_parameter('auto_throttle_max').value)
@@ -90,7 +90,7 @@ class DecisionNode(Node):
         self.auto_throttle_gps = float(self.get_parameter('auto_throttle_gps').value)
         self.auto_throttle_static_obstacle = float(self.get_parameter('auto_throttle_static_obstacle').value)
         self.num_static_obstacle_threshold = int(self.get_parameter('num_static_obstacle_threshold').value)
-        self.spacebar_deceleration_sec = float(self.get_parameter('spacebar_deceleration_sec').value)
+        self.mannual_deceleration_sec = float(self.get_parameter('mannual_deceleration_sec').value)
         self.manual_stop_use_spacebar = bool(self.get_parameter('manual_stop_use_spacebar').value)
         self.manual_stop_use_mouse = bool(self.get_parameter('manual_stop_use_mouse').value)
         self.mouse_button_code = int(self.get_parameter('mouse_button_code').value)
@@ -101,8 +101,8 @@ class DecisionNode(Node):
         # 파라미터 안전 보정
         if self.publish_rate_hz <= 0.0:
             self.publish_rate_hz = DEFAULTS['publish_rate_hz']
-        if self.deceleration_sec <= 0.0:
-            self.deceleration_sec = DEFAULTS['deceleration_sec']
+        if self.emergency_deceleration_sec <= 0.0:
+            self.emergency_deceleration_sec = DEFAULTS['emergency_deceleration_sec']
         if self.emergency_off_delay_sec < 0.0:
             self.emergency_off_delay_sec = DEFAULTS['emergency_off_delay_sec']
         if self.log_rate_hz < 0.0:
@@ -113,8 +113,8 @@ class DecisionNode(Node):
             self.auto_throttle_max = DEFAULTS['auto_throttle_max']
         if self.num_static_obstacle_threshold < 0:
             self.num_static_obstacle_threshold = DEFAULTS['num_static_obstacle_threshold']
-        if self.spacebar_deceleration_sec <= 0.0:
-            self.spacebar_deceleration_sec = DEFAULTS['spacebar_deceleration_sec']
+        if self.mannual_deceleration_sec <= 0.0:
+            self.mannual_deceleration_sec = DEFAULTS['mannual_deceleration_sec']
         if self.mouse_button_code <= 0:
             self.mouse_button_code = DEFAULTS['mouse_button_code']
         self.steer_limit = max(0.001, self.auto_steer_angle_abs_max - 1e-3)
@@ -171,12 +171,12 @@ class DecisionNode(Node):
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._on_timer)
 
         self.get_logger().info(
-            'decision_node started: publish_rate=%.1fHz deceleration_sec=%.2fs '
-            'spacebar_deceleration_sec=%.2fs auto_steer_angle_abs_max=%.2f auto_throttle_max=%.2f'
+            'decision_node started: publish_rate=%.1fHz emergency_deceleration_sec=%.2fs '
+            'mannual_deceleration_sec=%.2fs auto_steer_angle_abs_max=%.2f auto_throttle_max=%.2f'
             % (
                 self.publish_rate_hz,
-                self.deceleration_sec,
-                self.spacebar_deceleration_sec,
+                self.emergency_deceleration_sec,
+                self.mannual_deceleration_sec,
                 self.auto_steer_angle_abs_max,
                 self.auto_throttle_max,
             )
@@ -224,14 +224,14 @@ class DecisionNode(Node):
 
     def _compute_emergency_throttle(self, now_sec: float) -> float:
         # 2-a + emergency=True:
-        # 현재 throttle에서 0.0까지 deceleration_sec 동안 선형 감속
+        # 현재 throttle에서 0.0까지 emergency_deceleration_sec 동안 선형 감속
         if not self.decel_active:
             self.decel_active = True
             self.decel_start_time = now_sec
             self.decel_start_throttle = self.current_auto_throttle
 
         elapsed = now_sec - self.decel_start_time
-        progress = self._clamp(elapsed / self.deceleration_sec, 0.0, 1.0)
+        progress = self._clamp(elapsed / self.emergency_deceleration_sec, 0.0, 1.0)
         return self.decel_start_throttle * (1.0 - progress)
 
     def _consume_spacebar_request(self) -> bool:
@@ -250,7 +250,7 @@ class DecisionNode(Node):
             '[MANUAL-STOP] stop requested: /auto_throttle %.3f -> 0.0 in %.1fs'
             % (
                 self.spacebar_stop_start_throttle,
-                self.spacebar_deceleration_sec,
+                self.mannual_deceleration_sec,
             )
         )
 
@@ -271,7 +271,7 @@ class DecisionNode(Node):
 
     def _compute_spacebar_stop_throttle(self, now_sec: float) -> float:
         elapsed = now_sec - self.spacebar_stop_start_time
-        progress = self._clamp(elapsed / self.spacebar_deceleration_sec, 0.0, 1.0)
+        progress = self._clamp(elapsed / self.mannual_deceleration_sec, 0.0, 1.0)
         throttle = self.spacebar_stop_start_throttle * (1.0 - progress)
         if (progress >= 1.0) and (not self._spacebar_stop_done_logged):
             self._spacebar_stop_done_logged = True
