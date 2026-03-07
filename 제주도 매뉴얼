@@ -29,7 +29,8 @@ ros2 launch gps_planning f9r_roi_path.launch.py
 ros2 run gps_planning gps_purepursuit.py
 
 ros2 run rqt_image_view rqt_image_view
-ros2 run usb_cam usb_cam_node_exe
+ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video0" -p pixel_format:="raw_mjpeg"
+(상황에 따라 video0 혹은 2)
 ros2 run yolotl_ros2 lane_follower
 
 ros2 run decision_maker decision
