@@ -58,3 +58,23 @@ ros2 topic echo /f9p/navpvt --field num_sv, .../f9r/navpvt --field num_sv
 이 방식이 가장 깔끔합니다.
 
 블루투스 마우스 밑에가 8, 위에가 9
+
+
+
+ros2 bag record <topic_name_1> <topic_name_2> ...
+ros2 bag record /turtle1/cmd_vel
+
+
+ros2 bag record \
+/camera3/image_raw/compressed \
+/camera/color/camera_info \
+/camera/color/image_raw/compressed \
+/camera/aligned_depth_to_color/image_raw \
+/camera1/image_raw/compressed \
+/camera2/image_raw/compressed \
+/tf \
+/tf_static \
+-o my_robot_run_$(date +%Y-%m-%d-%H-%M-%S) \
+-s mcap \
+--compression-mode file \
+--compression-format zstd
