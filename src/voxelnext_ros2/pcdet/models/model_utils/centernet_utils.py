@@ -262,7 +262,10 @@ def _topk_1d(scores, batch_size, batch_idx, obj, K=40, nuscenes=False):
             topk_score, topk_ind = torch.topk(topk_scores.view(-1), min(K, topk_scores.view(-1).shape[-1]))
             #topk_score, topk_ind = torch.topk(score.reshape(-1), K)
 
-        topk_classes = (topk_ind // K).int()
+        # Use the actual number of selected candidates per class, not requested K.
+        # This keeps class indices correct when available candidates < K.
+        topk_per_class = max(int(topk_scores.shape[-1]), 1)
+        topk_classes = (topk_ind // topk_per_class).int()
         topk_inds = topk_inds.view(-1).gather(0, topk_ind)
         #print('topk_inds', topk_inds)
 
@@ -320,8 +323,9 @@ def decode_bbox_from_voxels(batch_size, indices, obj, _cls, rot_cos, rot_sin,
         box_part_list.append(vel)
 
     final_box_preds = torch.cat((box_part_list), dim=-1)
-    final_scores = scores.view(batch_size, K)
-    final_class_ids = class_ids.view(batch_size, K)
+    actual_k = scores.shape[1]
+    final_scores = scores.view(batch_size, actual_k)
+    final_class_ids = class_ids.view(batch_size, actual_k)
 
     assert post_center_limit_range is not None
     mask = (final_box_preds[..., :3] >= post_center_limit_range[:3]).all(2)
@@ -381,10 +385,11 @@ def decode_bbox_from_voxels_nuscenes(batch_size, indices, obj, rot_cos, rot_sin,
         iou = torch.clamp(iou, min=0, max=1.)
 
     final_box_preds = torch.cat((box_part_list), dim=-1)
-    final_scores = scores.view(batch_size, K)
-    final_class_ids = class_ids.view(batch_size, K)
+    actual_k = scores.shape[1]
+    final_scores = scores.view(batch_size, actual_k)
+    final_class_ids = class_ids.view(batch_size, actual_k)
     if not add_features is None:
-        add_features = [add_feature.view(batch_size, K, add_feature.shape[-1]) for add_feature in add_features]
+        add_features = [add_feature.view(batch_size, actual_k, add_feature.shape[-1]) for add_feature in add_features]
 
     assert post_center_limit_range is not None
     mask = (final_box_preds[..., :3] >= post_center_limit_range[:3]).all(2)
