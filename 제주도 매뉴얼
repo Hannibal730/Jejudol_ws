@@ -29,9 +29,7 @@ ros2 launch gps_planning f9r_roi_path.launch.py
 ros2 run gps_planning gps_purepursuit.py
 
 ros2 run rqt_image_view rqt_image_view
-ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video0" -p pixel_format:="raw_mjpeg"
-(상황에 따라 video0 혹은 2)
-ros2 run yolotl_ros2 lane_follower
+ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video3" -p pixel_format:="mjpeg2rgb"ros2 run yolotl_ros2 lane_follower
 
 ros2 run decision_maker decision
 
@@ -64,6 +62,7 @@ ros2 topic echo /f9p/navpvt --field num_sv, .../f9r/navpvt --field num_sv
 
 ros2 bag record <topic_name_1> <topic_name_2> ...
 ros2 bag record /turtle1/cmd_vel
+ros2 bag record /image_raw/compressed --compression-format zstd --compression-mode file
 
 
 ros2 bag record \
