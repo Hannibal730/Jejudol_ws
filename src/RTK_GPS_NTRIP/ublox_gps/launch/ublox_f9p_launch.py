@@ -37,13 +37,24 @@ import os
 import ament_index_python.packages
 import launch
 import launch_ros.actions
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from launch.conditions import IfCondition
+from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
+    show_fix_hz = LaunchConfiguration('show_fix_hz')
+
     config_directory = os.path.join(
         ament_index_python.packages.get_package_share_directory('ublox_gps'),
         'config')
     params = os.path.join(config_directory, 'zed_f9p.yaml')
+
+    declare_show_fix_hz = DeclareLaunchArgument(
+        'show_fix_hz',
+        default_value='true',
+        description='Print /f9p/fix publish rate in this launch console')
+
     ublox_gps_node = launch_ros.actions.Node(package='ublox_gps',
                                              executable='ublox_gps_node',
                                              output='screen',
@@ -52,7 +63,15 @@ def generate_launch_description():
                                                          ('/ublox_gps_node/fix_velocity', '/f9p/fix_velocity'),]
                                              )
 
+    fix_hz_monitor = ExecuteProcess(
+        condition=IfCondition(show_fix_hz),
+        cmd=['ros2', 'topic', 'hz', '/f9p/fix'],
+        output='screen'
+    )
+
     return launch.LaunchDescription([ublox_gps_node,
+                                     declare_show_fix_hz,
+                                     TimerAction(period=3.0, actions=[fix_hz_monitor]),
 
                                      launch.actions.RegisterEventHandler(
                                          event_handler=launch.event_handlers.OnProcessExit(

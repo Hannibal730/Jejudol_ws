@@ -35,7 +35,7 @@ ros2 run yolotl_ros2 lane_follower
 
 ros2 run decision_maker decision
 
-ros2 run serial_bridge serial_bridge
+ros2 run serial_bridge serial_bridge --ros-args -p port:=/dev/arduino_bridge
 
 ================자율주행================
 

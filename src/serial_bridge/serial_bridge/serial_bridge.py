@@ -6,7 +6,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32
 import serial, threading, time
 
-DEFAULT_PORT = '/dev/ttyACM0'
+DEFAULT_PORT = '/dev/arduino_bridge'
 DEFAULT_BAUD = 57600
 
 class SerialBridge(Node):
