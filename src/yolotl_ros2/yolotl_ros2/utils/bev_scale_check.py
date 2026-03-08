@@ -11,6 +11,8 @@ import numpy as np
 import argparse
 import os
 
+from ament_index_python.packages import get_package_share_directory
+
 
 class BEVScaleClickNode(Node):
     def __init__(self, args):
@@ -236,7 +238,6 @@ class BEVScaleClickNode(Node):
     def draw_overlay(self, img):
         out = img.copy()
 
-        # Hover
         if self.hover_pt is not None:
             x, y = self.hover_pt
             cv2.circle(out, (x, y), 4, (0, 255, 255), -1)
@@ -255,7 +256,6 @@ class BEVScaleClickNode(Node):
             cv2.putText(out, f"Y{i+1}", (x + 8, y + 18),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
-        # X / Y line
         if len(self.x_points) >= 2:
             cv2.line(out, self.x_points[0], self.x_points[-1], (0, 0, 255), 2)
 
@@ -343,17 +343,22 @@ def main(args=None):
     rclpy.init(args=args)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--topic', type=str, default='/image_raw/compressed',
-                        help='구독할 ROS2 이미지 토픽')
-    parser.add_argument('--bev-npz', type=str, required=True,
-                        help='BEV 파라미터 npz 파일')
-    parser.add_argument('--interval-m', type=float, default=0.5,
-                        help='점 간 실제 거리(m), 기본 0.5')
-    parser.add_argument('--out-npz', type=str, default='bev_scale_result.npz',
-                        help='계산 결과 저장 npz')
-    parser.add_argument('--out-txt', type=str, default='bev_scale_result.txt',
-                        help='계산 결과 저장 txt')
+
+    package_share_directory = get_package_share_directory('yolotl_ros2')
+
+    parser.add_argument('--topic', type=str, default='/image_raw/compressed')
+    parser.add_argument('--bev-filename', type=str, default='bev_params_0307.npz')
+    parser.add_argument('--interval-m', type=float, default=0.5)
+    parser.add_argument('--out-npz', type=str, default='bev_scale_result.npz')
+    parser.add_argument('--out-txt', type=str, default='bev_scale_result.txt')
+
     parsed_args = parser.parse_args()
+
+    parsed_args.bev_npz = os.path.join(
+        package_share_directory,
+        'config',
+        parsed_args.bev_filename
+    )
 
     node = BEVScaleClickNode(parsed_args)
 
