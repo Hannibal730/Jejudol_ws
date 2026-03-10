@@ -12,10 +12,10 @@ def generate_launch_description():
  
           DeclareLaunchArgument('host',                  default_value='www.gnssdata.or.kr'),
           DeclareLaunchArgument('port',                  default_value='2101'),
-          DeclareLaunchArgument('mountpoint',            default_value='SUWN-RTCM23'),  # JEJU-RTCM23 SONP-RTCM23 SONP-RTCM31 SONP-RTCM32 SUWN-RTCM23 SUWN-RTCM31 SUWN-RTCM32 SUWN-BINEX
+          DeclareLaunchArgument('mountpoint',            default_value='SUWN-RTCM31'),  # SONP-RTCM23   SONP-RTCM31   SONP-RTCM32  SUWN-RTCM23   SUWN-RTCM31   SUWN-RTCM32   SUWN-BINEX
           DeclareLaunchArgument('ntrip_version',         default_value='None'),
           DeclareLaunchArgument('authenticate',          default_value='True'),
-          DeclareLaunchArgument('username',              default_value='cds730@konkuk.ac.kr'),
+          DeclareLaunchArgument('username',              default_value='smzzang21@konkuk.ac.kr'),
           DeclareLaunchArgument('password',              default_value='gnss'),
           DeclareLaunchArgument('ssl',                   default_value='False'),
           DeclareLaunchArgument('cert',                  default_value='None'),
