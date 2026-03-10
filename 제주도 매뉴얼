@@ -29,7 +29,11 @@ ros2 launch gps_planning f9r_roi_path.launch.py
 ros2 run gps_planning gps_purepursuit.py
 
 ros2 run rqt_image_view rqt_image_view
-ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video3" -p pixel_format:="mjpeg2rgb"ros2 run yolotl_ros2 lane_follower
+아래는 로지텍
+ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video3" -p pixel_format:="mjpeg2rgb"
+아래는 엡코
+ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video2" -p pixel_format:="raw_mjpeg"
+ros2 run yolotl_ros2 lane_follower
 
 ros2 run decision_maker decision
 
@@ -78,3 +82,10 @@ ros2 bag record \
 -s mcap \
 --compression-mode file \
 --compression-format zstd
+
+
+앱코는 왼쪽에서 세번째로.
+v4l2-ctl --list-devices
+ffplay -f v4l2 /dev/video2
+
+ffplay -f v4l2 -input_format mjpeg -video_size 1280x720 /dev/video2

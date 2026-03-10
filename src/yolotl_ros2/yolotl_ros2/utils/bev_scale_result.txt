@@ -1,0 +1,17 @@
+# BEV Scale Calibration Result
+bev_npz: /home/hannibal/Jejudol_ws/install/yolotl_ros2/share/yolotl_ros2/config/bev_params_hsj.npz
+interval_m: 0.3
+warp_w: 640
+warp_h: 640
+m_per_pixel_x: 0.002843602
+m_per_pixel_y: 0.002061856
+
+# X-axis points
+X1: 184, 571
+X2: 287, 580
+X3: 395, 585
+
+# Y-axis points
+Y1: 295, 292
+Y2: 290, 429
+Y3: 287, 583

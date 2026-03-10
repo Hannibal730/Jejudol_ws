@@ -347,7 +347,7 @@ def main(args=None):
     package_share_directory = get_package_share_directory('yolotl_ros2')
 
     parser.add_argument('--topic', type=str, default='/image_raw/compressed')
-    parser.add_argument('--bev-filename', type=str, default='bev_params_0308.npz')
+    parser.add_argument('--bev-filename', type=str, default='bev_params_hsj.npz')
     parser.add_argument('--interval-m', type=float, default=0.3)
     parser.add_argument('--out-npz', type=str, default='bev_scale_result.npz')
     parser.add_argument('--out-txt', type=str, default='bev_scale_result.txt')
