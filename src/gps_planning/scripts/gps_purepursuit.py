@@ -25,7 +25,7 @@ class GpsPurePursuitNode(Node):
         self.declare_parameter('default_path_frame', 'csv')
         self.declare_parameter('gps_purepursuit_ld', 2.0)
         self.declare_parameter('wheelbase', 0.724)
-        self.declare_parameter('max_steer_deg', 25.0)
+        self.declare_parameter('max_steer_deg', 23.0)
         self.declare_parameter('lookahead_marker_size', 0.5)
         self.declare_parameter('timer_frequency', 20.0)
 
@@ -45,7 +45,7 @@ class GpsPurePursuitNode(Node):
         if self.wheelbase <= 0.0:
             self.wheelbase = 0.724
         if self.max_steer_deg <= 0.0:
-            self.max_steer_deg = 25.0
+            self.max_steer_deg = 23.0
         if self.lookahead_marker_size <= 0.0:
             self.lookahead_marker_size = 0.5
         if self.timer_frequency <= 0.0:
