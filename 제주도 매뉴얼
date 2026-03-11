@@ -3,12 +3,12 @@
 1. RTK 마운트 포인트 수정
 src/RTK_GPS_NTRIP/ntrip_client/launch/ntrip_client_launch.py 에서 DeclareLaunchArgument('mountpoint', default_value='SUWN-RTCM31')
 
-2*. 실제 f9r, f9p, imu 작동
+2*. 실제 f9r, f9p 작동
 ros2 launch ublox_gps ublox_f9p_launch.py
 ros2 launch ublox_gps ublox_f9r_launch.py
 ros2 run fix2nmea fix2nmea
 ros2 launch ntrip_client ntrip_client_launch.py
-ros2 launch myahrs_ros2_driver myahrs_ros2_driver.launch.py
+(imu 사용 안 함. ros2 launch myahrs_ros2_driver myahrs_ros2_driver.launch.py)
 
 
 아래 3~5단계는 csv맵을 새로 딸 때만 사용
@@ -29,10 +29,8 @@ ros2 launch gps_planning f9r_roi_path.launch.py
 ros2 run gps_planning gps_purepursuit.py
 
 ros2 run rqt_image_view rqt_image_view
-아래는 로지텍
-ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video3" -p pixel_format:="mjpeg2rgb"
-아래는 엡코
-ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video2" -p pixel_format:="raw_mjpeg"
+ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video2" -p pixel_format:="mjpeg2rgb"
+(비디오 번호는 0 또는 2)
 ros2 run yolotl_ros2 lane_follower
 
 ros2 run decision_maker decision
