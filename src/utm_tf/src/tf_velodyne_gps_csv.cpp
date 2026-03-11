@@ -258,9 +258,22 @@ private:
         t.header.frame_id = "csv";
         t.child_frame_id = "velodyne";
 
-        // Place velodyne at midpoint between f9r and f9p in csv frame.
-        t.transform.translation.x = 0.5 * (f9r_x_rel_.value() + f9p_x_rel_.value());
-        t.transform.translation.y = 0.5 * (f9r_y_rel_.value() + f9p_y_rel_.value());
+        // Place velodyne 0.82 m ahead from f9r along the f9r->f9p direction.
+        const double f9r_x = f9r_x_rel_.value();
+        const double f9r_y = f9r_y_rel_.value();
+        const double dx = f9p_x_rel_.value() - f9r_x;
+        const double dy = f9p_y_rel_.value() - f9r_y;
+        const double baseline = std::hypot(dx, dy);
+        if (baseline < 1e-6) {
+            RCLCPP_WARN(this->get_logger(), "f9r and f9p positions are too close. Skipping velodyne TF update.");
+            return;
+        }
+
+        const double velodyne_offset_from_f9r = 0.82; // [m]
+        const double ux = dx / baseline;
+        const double uy = dy / baseline;
+        t.transform.translation.x = f9r_x + velodyne_offset_from_f9r * ux;
+        t.transform.translation.y = f9r_y + velodyne_offset_from_f9r * uy;
         t.transform.translation.z = 0.0;
 
         // Apply yaw only (roll/pitch fixed to zero).
