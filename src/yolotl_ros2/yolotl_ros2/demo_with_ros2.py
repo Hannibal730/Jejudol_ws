@@ -152,14 +152,14 @@ class LaneFollowerNode(Node):
         self.tracked_lanes = {'left': {'coeff': None, 'age': 0}, 'right': {'coeff': None, 'age': 0}}
         self.tracked_center_path = {'coeff': None}
         self.SMOOTHING_ALPHA = 0.6
-        self.MAX_LANE_AGE = 7
+        self.MAX_LANE_AGE = 30
         self.L = 0.73  # 후륜축-전륜축 중심간 거리
 
         self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4, 0.6
         self.current_throttle = self.THROTTLE_MIN
 
-        self.MIN_LOOKAHEAD_DISTANCE = 1.7
-        self.MAX_LOOKAHEAD_DISTANCE = 2.5
+        self.MIN_LOOKAHEAD_DISTANCE = 1.3
+        self.MAX_LOOKAHEAD_DISTANCE = 1.8
         self.MAX_STEER_DEG = 23.0
         self.prev_steer_deg = 0.0
 
