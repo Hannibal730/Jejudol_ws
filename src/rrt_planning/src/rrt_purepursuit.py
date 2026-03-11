@@ -30,10 +30,14 @@ class MaRRTPurePursuit(Node):
 
         self.declare_parameter('wheelbase', 0.724)
         self.declare_parameter('lookahead_distance', 3.5)
+        self.declare_parameter('max_steer_deg', 23.0)
 
         # 파라미터
         self.wheelbase = float(self.get_parameter('wheelbase').value)
         self.Ld = float(self.get_parameter('lookahead_distance').value)
+        self.max_steer_deg = float(self.get_parameter('max_steer_deg').value)
+        if self.max_steer_deg <= 0.0:
+            self.max_steer_deg = 23.0
 
         # 차량의 현재 위치 (velodyne 좌표계, 라이다/후륜축 중심)
         self.vehicle_x = 0.0
@@ -183,6 +187,7 @@ class MaRRTPurePursuit(Node):
         alpha = math.atan2(lookahead_point[1], lookahead_point[0])
         steer_rad = math.atan2(2.0 * self.wheelbase * math.sin(alpha), Ld)
         steer_deg = math.degrees(steer_rad)
+        steer_deg = max(-self.max_steer_deg, min(self.max_steer_deg, steer_deg))
         self.get_logger().info(
             f'Pure Pursuit: Lookahead=({lookahead_point[0]:.2f}, {lookahead_point[1]:.2f}), '
             f'alpha={math.degrees(alpha):.2f} deg, steer={steer_deg:.2f} deg ({steer_rad:.3f} rad)'

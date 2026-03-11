@@ -1,7 +1,7 @@
 tf_gps_csv_node:
   ros__parameters:
     # # 노천 극장
-    csv_file_path: "/home/hannibal/Jejudol_ws/data/rosbag2_2026_02_11-17_59_36_lidar_gps_imu.csv"   
+    csv_file_path: "/home/hannibal/Jejudol_ws/data/0310_1.csv"   
 
     # # 1.
     # csv_file_path: "/home/hannibal/Mandol_ws/data/processed/1_T_right_P_right.csv"

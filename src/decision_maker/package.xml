@@ -3,7 +3,7 @@
   <name>decision_maker</name>
   <version>0.0.1</version>
   <description>Decision node for selecting steering and throttle commands.</description>
-  <maintainer email="hannibal@todo.todo">hannibal</maintainer>
+  <maintainer email="cds730@naver.com">Daeseung CHOI</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>

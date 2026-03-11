@@ -1,4 +1,5 @@
 #include <chrono>
+#include <string>
 
 #include "nmea_msgs/msg/sentence.h"
 #include "sensor_msgs/msg/nav_sat_fix.h"
@@ -19,13 +20,19 @@ class Transformer : public rclcpp::Node
   Transformer() 
   : Node("fix2nmea")
   {
+	const std::string fix_topic =
+		this->declare_parameter<std::string>("fix_topic", "/f9r/fix");
+
    
 	//Publishes nmea sentences to topic /ntrip_client/nmea
 	nmea_pub_ = this->create_publisher<nmea_msgs::msg::Sentence>("ntrip_client/nmea", 10);  
 	
       	
-      	//Subscribes to obtain NavSatFix messages from topic /ublox_gps_node/fix
-      	navsatfix_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>("ublox_gps_node/fix", 10, std::bind(&Transformer::receiveNavSatFix, this, _1));
+      	//Subscribes to obtain NavSatFix messages from topic /f9r/fix by default.
+      	//It can be changed using `--ros-args -p fix_topic:=<topic_name>`.
+      	navsatfix_sub_ = this->create_subscription<sensor_msgs::msg::NavSatFix>(
+      		fix_topic, 10, std::bind(&Transformer::receiveNavSatFix, this, _1));
+	RCLCPP_INFO(this->get_logger(), "fix2nmea subscribing to NavSatFix topic: %s", fix_topic.c_str());
       	//navhpposllh_sub_ = this->create_subscription<ublox_msgs::msg::NavHPPOSLLH>("ublox_gps_node/fix", 10, std::bind(&Transformer::receiveNavHpPosLlh, this, _1));
   }
   

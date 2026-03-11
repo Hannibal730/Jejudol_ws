@@ -46,3 +46,5 @@ metadata.yaml
 *.db3
 
 .venv
+
+AGENT.md

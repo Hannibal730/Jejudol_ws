@@ -4,7 +4,7 @@
   <name>simulator_pkg</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="ryuu@todo.todo">ryuu</maintainer>
+  <maintainer email="jhyoo0728@naver.com">Seunghoon YOO</maintainer>
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>

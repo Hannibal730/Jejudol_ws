@@ -27,3 +27,4 @@ j:~$ ros2 topic list
 plothuggler 실행
 source /opt/ros/humble/setup.bash
 ros2 run plotjuggler plotjuggler
+

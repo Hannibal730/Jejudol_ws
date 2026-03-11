@@ -1,0 +1,346 @@
+#include <Arduino.h>
+#include <math.h>
+#include <util/atomic.h>
+
+// [상수/변수 선언부]
+#define STEERING_PULSE_PIN 2
+#define ACCEL_PULSE_PIN 3
+#define ENCODER_A 18
+#define ENCODER_B 19
+#define MANUAL_MODE_PIN 20
+#define AUTO_MODE_PIN 21
+
+#define BREAK_MODE 200
+#define MANUAL_MODE 1400
+#define AUTO_MODE 1700
+
+#define POT_MAX 843
+#define POT_MIN 143
+#define MAX_STEER_TIRE_DEG 20
+
+#define KP 0.5
+#define KI 0.0
+#define KD 0.0
+#define PID_DEADBAND 0.05
+
+#define ACCEL_CENTER_US 1500
+#define STEER_CENTER_US 1500
+#define ACCEL_DB_US 50
+#define STEER_DB_US 25
+#define ACCEL_FWD_MAX_US 1804
+#define ACCEL_REV_MIN_US 1104
+#define RC_THROTTLE_DB_NORM 0.03
+#define RC_STEER_DB_NORM 0.1
+#define STEER_DEADBAND_DEG 1.0
+
+volatile long encoderCount = 0;
+volatile uint32_t steer_rise_us = 0, accel_rise_us = 0, manual_rise_us = 0, auto_rise_us = 0;
+volatile uint16_t Steering_us = 1500, Accel_us = 1500, Manual_us = 1000, Auto_us = 1000;
+volatile uint32_t accel_last_us = 0;
+
+int DIR1 = 10, PWM1 = 11, DIR2 = 6, PWM2 = 7, DIR3 = 8, PWM3 = 9;
+int POTPin = A0;
+#define MIN_DRIVE_PWM 60
+#define MAX_DRIVE_PWM 180
+
+#define SERIAL_BUFFER_SIZE 48
+char serialBuffer[SERIAL_BUFFER_SIZE];
+size_t bufferIndex = 0;
+
+float throttle_cmd = 0.0f;
+float steer_auto_deg = 0.0f;
+bool throttleFresh = false;
+bool steerFresh = false;
+unsigned long lastThrottleMs = 0;
+unsigned long lastSteerMs = 0;
+
+#define THROTTLE_TIMEOUT_MS 500
+#define STEER_TIMEOUT_MS 500
+
+#define PULSE_MIN 500
+#define PULSE_MAX 2500
+#define SIGNAL_THRESHOLD 0.05 
+
+volatile uint32_t steer_last_us = 0, manual_last_us = 0, auto_last_us = 0;
+
+void Steer(double u) {
+  u = constrain(u, -1.0, 1.0);
+
+  if (fabs(u) < PID_DEADBAND) {
+    analogWrite(PWM3, 0);
+    digitalWrite(DIR3, LOW);
+    return;
+  }
+
+  int pwm_val = (int)(fabs(u) * 255.0);
+
+  if (u > 0) {
+    digitalWrite(DIR3, HIGH);
+    analogWrite(PWM3, pwm_val / 2);
+  } else {
+    digitalWrite(DIR3, LOW);
+    analogWrite(PWM3, pwm_val / 2);
+  }
+}
+
+void parseSerial() {
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+
+    if (c == '\n') {
+      serialBuffer[bufferIndex] = '\0';
+
+      if (strncmp(serialBuffer, "TH", 2) == 0 || strncmp(serialBuffer, "th", 2) == 0) {
+        char *p = serialBuffer + 2;
+        while (*p == ' ' || *p == '\t') ++p;
+        float v = atof(p);
+        if (v > 1.0f) v = 1.0f;
+        if (v < -1.0f) v = -1.0f;
+        throttle_cmd = v;
+        throttleFresh = true;
+        lastThrottleMs = millis();
+      }
+      else if (strncmp(serialBuffer, "SA", 2) == 0 || strncmp(serialBuffer, "sa", 2) == 0) {
+        char *p = serialBuffer + 2;
+        while (*p == ' ' || *p == '\t') ++p;
+        float a = atof(p);
+        if (a > MAX_STEER_TIRE_DEG) a = MAX_STEER_TIRE_DEG;
+        if (a < -MAX_STEER_TIRE_DEG) a = -MAX_STEER_TIRE_DEG;
+        steer_auto_deg = a;
+        steerFresh = true;
+        lastSteerMs = millis();
+      }
+      bufferIndex = 0;
+    }
+    else if (c != '\r') {
+      if (bufferIndex < SERIAL_BUFFER_SIZE - 1) {
+        serialBuffer[bufferIndex++] = c;
+      } else {
+        bufferIndex = 0;
+      }
+    }
+  }
+}
+
+static inline float Mapping(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+static inline double applyDeadband(double x, double band) {
+  return (fabs(x) < band) ? 0.0 : x;
+}
+
+void SteeringPulseInt() {
+  uint32_t now = micros();
+  if (digitalRead(STEERING_PULSE_PIN) == HIGH) {
+    steer_rise_us = now;
+  } else {
+    uint32_t w = now - steer_rise_us;
+    if (w >= PULSE_MIN && w <= PULSE_MAX) {
+      Steering_us = (uint16_t)w;
+      steer_last_us = now;
+    }
+  }
+}
+
+void AccelPulseInt() {
+  uint32_t now = micros();
+  if (digitalRead(ACCEL_PULSE_PIN) == HIGH) {
+    accel_rise_us = now;
+  } else {
+    uint32_t w = now - accel_rise_us;
+    if (w >= PULSE_MIN && w <= PULSE_MAX) {
+      Accel_us = (uint16_t)w;
+      accel_last_us = now;
+    }
+  }
+}
+
+void ManualPulseInt() {
+  uint32_t now = micros();
+  if (digitalRead(MANUAL_MODE_PIN) == HIGH) {
+    manual_rise_us = now;
+  } else {
+    uint32_t w = now - manual_rise_us;
+    if (w >= PULSE_MIN && w <= PULSE_MAX) {
+      Manual_us = (uint16_t)w;
+      manual_last_us = now;
+    }
+  }
+}
+
+void AutoPulseInt() {
+  uint32_t now = micros();
+  if (digitalRead(AUTO_MODE_PIN) == HIGH) {
+    auto_rise_us = now;
+  } else {
+    uint32_t w = now - auto_rise_us;
+    if (w >= PULSE_MIN && w <= PULSE_MAX) {
+      Auto_us = (uint16_t)w;
+      auto_last_us = now;
+    }
+  }
+}
+
+void encoderISR() {
+  if (digitalRead(ENCODER_A) == digitalRead(ENCODER_B)) {
+    encoderCount++;
+  } else {
+    encoderCount--;
+  }
+}
+
+double PID(double ref, double sense, unsigned long dt_us) {
+  static double prev_err = 0.0;
+  static double integral = 0.0;
+
+  double dt_s = dt_us * 1.0e-6;
+  if (dt_s <= 0.0) dt_s = 1e-6;
+
+  double err = ref - sense;
+  integral += err * dt_s;
+
+  double P = KP * err;
+  double I = KI * integral;
+  double D = KD * (err - prev_err) / dt_s;
+
+  prev_err = err;
+  return P + I + D;
+}
+
+void StopMotor() {
+  digitalWrite(DIR1, HIGH);
+  analogWrite(PWM1, 0);
+  digitalWrite(DIR2, HIGH);
+  analogWrite(PWM2, 0);
+  digitalWrite(DIR3, LOW); // 조향 프리휠
+  analogWrite(PWM3, 0);
+}
+
+void MoveForward(double throttle) {
+  if (throttle > 1.0) throttle = 1.0;
+  else if (throttle < 0.0) throttle = 0.0;
+
+  int in = (int)(Mapping(throttle, 0.0, 1.0, MIN_DRIVE_PWM, MAX_DRIVE_PWM));
+  if (throttle < 0.01) in = 0;
+  
+  digitalWrite(DIR1, HIGH);
+  analogWrite(PWM1, in);
+  digitalWrite(DIR2, LOW);
+  analogWrite(PWM2, in);
+}
+
+void MoveBackward(double throttle) {
+  if (throttle > 1.0) throttle = 1.0;
+  else if (throttle < 0.0) throttle = 0.0;
+
+  int in = (int)(Mapping(throttle, 0.0, 1.0, MIN_DRIVE_PWM, MAX_DRIVE_PWM));
+  if (throttle < 0.01) in = 0;
+
+  digitalWrite(DIR1, LOW);
+  analogWrite(PWM1, in);
+  digitalWrite(DIR2, HIGH);
+  analogWrite(PWM2, in);
+}
+
+void setup() {
+  Serial.begin(57600);
+
+  pinMode(STEERING_PULSE_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(STEERING_PULSE_PIN), SteeringPulseInt, CHANGE);
+
+  pinMode(ACCEL_PULSE_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(ACCEL_PULSE_PIN), AccelPulseInt, CHANGE);
+
+  pinMode(MANUAL_MODE_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(MANUAL_MODE_PIN), ManualPulseInt, CHANGE);
+
+  pinMode(AUTO_MODE_PIN, INPUT);
+  attachInterrupt(digitalPinToInterrupt(AUTO_MODE_PIN), AutoPulseInt, CHANGE);
+
+  pinMode(ENCODER_A, INPUT_PULLUP);
+  pinMode(ENCODER_B, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(ENCODER_A), encoderISR, CHANGE);
+
+  pinMode(POTPin, INPUT);
+
+  pinMode(DIR1, OUTPUT);
+  pinMode(PWM1, OUTPUT);
+  pinMode(DIR2, OUTPUT);
+  pinMode(PWM2, OUTPUT);
+  pinMode(DIR3, OUTPUT);
+  pinMode(PWM3, OUTPUT);
+
+  StopMotor();
+}
+
+void loop() {
+  // 루프 안정화를 위한 짧은 지연 (10ms)
+  delay(10); 
+
+  parseSerial();
+  static unsigned long prev_t_us = 0;
+  unsigned long t_us = micros();
+  unsigned long dt_us = (prev_t_us == 0) ? 1000UL : (t_us - prev_t_us);
+  prev_t_us = t_us;
+
+  long Steering_us_local, Accel_us_local, Manual_us_local, Auto_us_local;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    Steering_us_local = Steering_us; 
+    Accel_us_local = Accel_us;
+    Manual_us_local = Manual_us; 
+    Auto_us_local = Auto_us;
+  }
+
+  int Mode_val = BREAK_MODE;
+  if (Manual_us_local > 1600) Mode_val = MANUAL_MODE;
+  else if (Auto_us_local > 1600) Mode_val = AUTO_MODE;
+
+  if (micros() - accel_last_us > 30000) Accel_us_local = ACCEL_CENTER_US;
+  
+  float Throttle_input = 0.0f;
+  if (Accel_us_local > ACCEL_CENTER_US + ACCEL_DB_US)
+    Throttle_input = (float)(Accel_us_local - ACCEL_CENTER_US) / (ACCEL_FWD_MAX_US - ACCEL_CENTER_US);
+  else if (Accel_us_local < ACCEL_CENTER_US - ACCEL_DB_US)
+    Throttle_input = (float)(Accel_us_local - ACCEL_CENTER_US) / (ACCEL_CENTER_US - ACCEL_REV_MIN_US);
+  
+  Throttle_input = constrain(Throttle_input, -1.0, 1.0);
+  
+  float Steer_rc = Mapping(Steering_us_local, 1280, 1792, -1.0, 1.0);
+  Steer_rc = applyDeadband(Steer_rc, RC_STEER_DB_NORM);
+  double ref_steer_deg_rc = Mapping(Steer_rc, -1.0, 1.0, +MAX_STEER_TIRE_DEG, -MAX_STEER_TIRE_DEG);
+
+  int POTval = analogRead(POTPin);
+  double deg = Mapping(POTval, POT_MIN, POT_MAX, +MAX_STEER_TIRE_DEG, -MAX_STEER_TIRE_DEG);
+  deg = applyDeadband(deg, STEER_DEADBAND_DEG);
+
+  bool sa_ok = steerFresh && (millis() - lastSteerMs <= STEER_TIMEOUT_MS);
+  double ref_steer_deg = (Mode_val == AUTO_MODE && sa_ok) ? (double)steer_auto_deg : ref_steer_deg_rc;
+
+  double u = PID(ref_steer_deg, deg, dt_us);
+  u = applyDeadband(u, PID_DEADBAND);
+  u = constrain(u, -1.0, 1.0);
+
+  if (Mode_val == BREAK_MODE) {
+    StopMotor();
+  } else {
+    if (Mode_val == MANUAL_MODE) {
+      if (Throttle_input > 0.05) MoveForward(Throttle_input);
+      else if (Throttle_input < -0.05) MoveBackward(-Throttle_input);
+      else { analogWrite(PWM1, 0); analogWrite(PWM2, 0); }
+    } else { 
+      MoveForward(0.4);
+    }
+    Steer(u); 
+  }
+
+  static unsigned long lp = 0;
+  if (millis() - lp > 100) {
+    lp = millis();
+    Serial.print("MODE:"); Serial.print(Mode_val);
+    Serial.print(" | Tgt:"); Serial.print(ref_steer_deg, 1);
+    Serial.print(" | Cur:"); Serial.print(deg, 1);
+    Serial.print(" | PID:"); Serial.print(u, 2);
+    Serial.print(" | POT:"); Serial.println(POTval);
+  }
+}

@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 
+import os
+import select
+import sys
+import termios
+import threading
 import time
+import tty
 
 import rclpy
 from rclpy.node import Node
@@ -10,18 +16,20 @@ from std_msgs.msg import Bool, Float32, Int8
 DEFAULTS = {
     'publish_rate_hz': 20.0,
     'log_rate_hz': 1.0,
-    'deceleration_sec': 1.5,
+    'emergency_deceleration_sec': 1.5,
     'emergency_off_delay_sec': 0.8,
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,
     'auto_throttle_moon_course': 0.2,
-    'auto_throttle_yolotl_max': 0.7,
-    'auto_throttle_yolotl_min': 0.4,
+    'auto_throttle_yolotl_max': 0.4,
+    'auto_throttle_yolotl_min': 0.15,
     'auto_throttle_rrt_max': 0.7,
     'auto_throttle_rrt_min': 0.4,
-    'auto_throttle_gps': 0.3,
+    'auto_throttle_gps': 0.2,
     'auto_throttle_static_obstacle': 0.4,
     'num_static_obstacle_threshold': 4,
+    'mannual_deceleration_sec': 2.5,
+    'manual_stop_use_spacebar': True,
 }
 
 # mission state 이름(요청 반영)
@@ -45,7 +53,7 @@ MISSION_RRT = 'rrt'
 # 4)   num_lidar_cone>=threshold -> mission_state=static_obstacle
 #      num_lidar_cone<threshold  -> mission_state=rrt
 # state별 제어
-# - emergency       : steer=yolotl, throttle은 현재값에서 deceleration_sec 동안 0.0으로 선형 감속
+# - emergency       : steer=yolotl, throttle은 현재값에서 emergency_deceleration_sec 동안 0.0으로 선형 감속
 # - moon_course     : steer=rrt_caution, throttle=auto_throttle_moon_course(고정)
 # - lane            : steer=yolotl, throttle=[yolotl_min, yolotl_max] 역비례 매핑
 # - gps             : steer=gps, throttle=auto_throttle_gps(고정)
@@ -63,7 +71,7 @@ class DecisionNode(Node):
 
         self.publish_rate_hz = float(self.get_parameter('publish_rate_hz').value)
         self.log_rate_hz = float(self.get_parameter('log_rate_hz').value)
-        self.deceleration_sec = float(self.get_parameter('deceleration_sec').value)
+        self.emergency_deceleration_sec = float(self.get_parameter('emergency_deceleration_sec').value)
         self.emergency_off_delay_sec = float(self.get_parameter('emergency_off_delay_sec').value)
         self.auto_steer_angle_abs_max = float(self.get_parameter('auto_steer_angle_abs_max').value)
         self.auto_throttle_max = float(self.get_parameter('auto_throttle_max').value)
@@ -75,12 +83,14 @@ class DecisionNode(Node):
         self.auto_throttle_gps = float(self.get_parameter('auto_throttle_gps').value)
         self.auto_throttle_static_obstacle = float(self.get_parameter('auto_throttle_static_obstacle').value)
         self.num_static_obstacle_threshold = int(self.get_parameter('num_static_obstacle_threshold').value)
+        self.mannual_deceleration_sec = float(self.get_parameter('mannual_deceleration_sec').value)
+        self.manual_stop_use_spacebar = bool(self.get_parameter('manual_stop_use_spacebar').value)
 
         # 파라미터 안전 보정
         if self.publish_rate_hz <= 0.0:
             self.publish_rate_hz = DEFAULTS['publish_rate_hz']
-        if self.deceleration_sec <= 0.0:
-            self.deceleration_sec = DEFAULTS['deceleration_sec']
+        if self.emergency_deceleration_sec <= 0.0:
+            self.emergency_deceleration_sec = DEFAULTS['emergency_deceleration_sec']
         if self.emergency_off_delay_sec < 0.0:
             self.emergency_off_delay_sec = DEFAULTS['emergency_off_delay_sec']
         if self.log_rate_hz < 0.0:
@@ -91,6 +101,8 @@ class DecisionNode(Node):
             self.auto_throttle_max = DEFAULTS['auto_throttle_max']
         if self.num_static_obstacle_threshold < 0:
             self.num_static_obstacle_threshold = DEFAULTS['num_static_obstacle_threshold']
+        if self.mannual_deceleration_sec <= 0.0:
+            self.mannual_deceleration_sec = DEFAULTS['mannual_deceleration_sec']
         self.steer_limit = max(0.001, self.auto_steer_angle_abs_max - 1e-3)
 
         # 입력 상태
@@ -111,6 +123,18 @@ class DecisionNode(Node):
         self.decel_start_time = 0.0
         self.decel_start_throttle = 0.0
         self._next_log_time = 0.0
+        self.spacebar_stop_active = False
+        self.spacebar_stop_start_time = 0.0
+        self.spacebar_stop_start_throttle = 0.0
+        self._spacebar_stop_done_logged = False
+
+        # 키보드(space) 입력 상태
+        self._spacebar_pending = False
+        self._spacebar_pending_lock = threading.Lock()
+        self._kbd_stop = False
+        self._kbd_thread = None
+        self._stdin_fd = None
+        self._stdin_attr_backup = None
 
         # 입력 토픽 구독
         self.create_subscription(Bool, '/lane_detection_status', self._lane_detection_cb, 10)
@@ -125,14 +149,16 @@ class DecisionNode(Node):
         self.auto_steer_pub = self.create_publisher(Float32, '/auto_steer_angle', 10)
         self.auto_throttle_pub = self.create_publisher(Float32, '/auto_throttle', 10)
 
+        self._start_manual_stop_listener()
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._on_timer)
 
         self.get_logger().info(
-            'decision_node started: publish_rate=%.1fHz deceleration_sec=%.2fs '
-            'auto_steer_angle_abs_max=%.2f auto_throttle_max=%.2f'
+            'decision_node started: publish_rate=%.1fHz emergency_deceleration_sec=%.2fs '
+            'mannual_deceleration_sec=%.2fs auto_steer_angle_abs_max=%.2f auto_throttle_max=%.2f'
             % (
                 self.publish_rate_hz,
-                self.deceleration_sec,
+                self.emergency_deceleration_sec,
+                self.mannual_deceleration_sec,
                 self.auto_steer_angle_abs_max,
                 self.auto_throttle_max,
             )
@@ -180,15 +206,120 @@ class DecisionNode(Node):
 
     def _compute_emergency_throttle(self, now_sec: float) -> float:
         # 2-a + emergency=True:
-        # 현재 throttle에서 0.0까지 deceleration_sec 동안 선형 감속
+        # 현재 throttle에서 0.0까지 emergency_deceleration_sec 동안 선형 감속
         if not self.decel_active:
             self.decel_active = True
             self.decel_start_time = now_sec
             self.decel_start_throttle = self.current_auto_throttle
 
         elapsed = now_sec - self.decel_start_time
-        progress = self._clamp(elapsed / self.deceleration_sec, 0.0, 1.0)
+        progress = self._clamp(elapsed / self.emergency_deceleration_sec, 0.0, 1.0)
         return self.decel_start_throttle * (1.0 - progress)
+
+    def _consume_spacebar_request(self) -> bool:
+        with self._spacebar_pending_lock:
+            if not self._spacebar_pending:
+                return False
+            self._spacebar_pending = False
+            return True
+
+    def _activate_spacebar_stop(self, now_sec: float):
+        self.spacebar_stop_active = True
+        self.spacebar_stop_start_time = now_sec
+        self.spacebar_stop_start_throttle = max(0.0, self.current_auto_throttle)
+        self._spacebar_stop_done_logged = False
+        self.get_logger().warn(
+            '[MANUAL-STOP] stop requested: /auto_throttle %.3f -> 0.0 in %.1fs'
+            % (
+                self.spacebar_stop_start_throttle,
+                self.mannual_deceleration_sec,
+            )
+        )
+
+    def _deactivate_spacebar_stop(self):
+        if not self.spacebar_stop_active:
+            return
+        self.spacebar_stop_active = False
+        self._spacebar_stop_done_logged = False
+        self.get_logger().warn(
+            '[MANUAL-STOP] stop profile canceled: returning to mission throttle control'
+        )
+
+    def _toggle_spacebar_stop(self, now_sec: float):
+        if self.spacebar_stop_active:
+            self._deactivate_spacebar_stop()
+        else:
+            self._activate_spacebar_stop(now_sec)
+
+    def _compute_spacebar_stop_throttle(self, now_sec: float) -> float:
+        elapsed = now_sec - self.spacebar_stop_start_time
+        progress = self._clamp(elapsed / self.mannual_deceleration_sec, 0.0, 1.0)
+        throttle = self.spacebar_stop_start_throttle * (1.0 - progress)
+        if (progress >= 1.0) and (not self._spacebar_stop_done_logged):
+            self._spacebar_stop_done_logged = True
+            self.get_logger().warn('[MANUAL-STOP] stop profile completed: /auto_throttle=0.000')
+        return throttle
+
+    def _start_keyboard_listener(self):
+        if not sys.stdin.isatty():
+            self.get_logger().warn(
+                '[KEYBOARD] listener disabled (stdin is not a TTY).'
+            )
+            return
+
+        try:
+            self._stdin_fd = sys.stdin.fileno()
+            self._stdin_attr_backup = termios.tcgetattr(self._stdin_fd)
+        except Exception as exc:
+            self.get_logger().warn(
+                f'[KEYBOARD] listener init failed: {exc}'
+            )
+            self._stdin_fd = None
+            self._stdin_attr_backup = None
+            return
+
+        self._kbd_stop = False
+        self._kbd_thread = threading.Thread(target=self._keyboard_loop, daemon=True)
+        self._kbd_thread.start()
+        self.get_logger().info(
+            '[KEYBOARD] press SPACE in this terminal to linearly decelerate /auto_throttle to 0.0'
+        )
+
+    def _start_manual_stop_listener(self):
+        if self.manual_stop_use_spacebar:
+            self._start_keyboard_listener()
+            return
+        if not self.manual_stop_use_spacebar:
+            self.get_logger().warn(
+                '[MANUAL-STOP] keyboard listener is disabled.'
+            )
+
+    def _restore_terminal(self):
+        if (self._stdin_fd is None) or (self._stdin_attr_backup is None):
+            return
+        try:
+            termios.tcsetattr(self._stdin_fd, termios.TCSADRAIN, self._stdin_attr_backup)
+        except Exception:
+            pass
+
+    def _keyboard_loop(self):
+        if self._stdin_fd is None:
+            return
+
+        try:
+            tty.setcbreak(self._stdin_fd)
+            while not self._kbd_stop:
+                readable, _, _ = select.select([self._stdin_fd], [], [], 0.1)
+                if not readable:
+                    continue
+                data = os.read(self._stdin_fd, 1)
+                if data == b' ':
+                    with self._spacebar_pending_lock:
+                        self._spacebar_pending = True
+        except Exception:
+            pass
+        finally:
+            self._restore_terminal()
 
     def _map_throttle_inverse_by_steer(self, steer_cmd: float, throttle_max: float, throttle_min: float) -> float:
         # |steer|=0 에 가까울수록 throttle_max
@@ -234,13 +365,16 @@ class DecisionNode(Node):
 
         self.get_logger().info(
             f'mission_state={self.current_mission_state}, '
-            f'emergency_raw={self.emergency_raw}, emergency_active={self.emergency_active}, '
+            f'emergency={self.emergency_raw}, emergency_off_delay={self.emergency_active}, '
             f'/auto_steer_angle={steer_cmd:.3f}, '
             f'/auto_throttle={throttle_cmd:.3f}'
         )
 
     def _on_timer(self):
         now_sec = self._now_sec()
+        if self._consume_spacebar_request():
+            self._toggle_spacebar_stop(now_sec)
+
         self.emergency_active = self._compute_emergency_active(now_sec)
         state = self._get_mission_state()
         self.current_mission_state = state
@@ -281,6 +415,10 @@ class DecisionNode(Node):
         # 모든 state에서 publish 직전 최종 steer 안전장치 재적용
         steer_cmd = self._clamp_steer(steer_cmd)
 
+        # 스페이스바 감속 오버라이드(미션 throttle보다 우선)
+        if self.spacebar_stop_active:
+            throttle_cmd = self._compute_spacebar_stop_throttle(now_sec)
+
         # throttle 공통 안전장치
         throttle_cmd = self._clamp(throttle_cmd, 0.0, self.auto_throttle_max)
         self.current_auto_throttle = throttle_cmd
@@ -294,8 +432,18 @@ class DecisionNode(Node):
         self.auto_throttle_pub.publish(throttle_msg)
         self._maybe_log_status(steer_cmd, throttle_cmd)
 
+    def destroy_node(self):
+        self._kbd_stop = True
+        if self._kbd_thread is not None:
+            self._kbd_thread.join(timeout=0.3)
+
+        self._restore_terminal()
+        super().destroy_node()
+
 
 def main(args=None):
+    # 모든 로그 메시지 맨 앞에 시간을 붙여 출력
+    os.environ['RCUTILS_CONSOLE_OUTPUT_FORMAT'] = '[{time}] {message}'
     rclpy.init(args=args)
     node = DecisionNode()
     try:

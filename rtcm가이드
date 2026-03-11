@@ -1,0 +1,43 @@
+좋아요. 이번엔 “왜 그런지”를 데이터 레벨로 자세히 설명할게요.
+
+핵심 결론
+
+지금 체인(fix2nmea -> ntrip_client -> /ntrip_client/rtcm -> ublox_gps)은 RTCM3 스트림에 최적화되어 있습니다.
+그래서 SUWN-RTCM31/32는 잘 먹고, SUWN-RTCM23/SUWN-BINEX는 현재 코드에서 바로 쓰기 어렵습니다.
+왜 그렇게 보냐면 (실측 바이트 기준)
+제가 각 마운트포인트에 직접 접속해서 초기 바이트를 확인했을 때:
+
+SUWN-RTCM31
+ICY 200 OK 뒤 첫 바이트가 d3 ...
+0xD3는 RTCM3 프리앰블입니다.
+SUWN-RTCM32
+역시 ICY 200 OK 뒤 d3 ...
+이것도 RTCM3 계열입니다.
+SUWN-RTCM23
+ICY 200 OK 뒤 59 7e 7d 7f ...처럼 0xD3가 안 나옴
+즉 현재 파서가 기대하는 RTCM3 프레임이 아닙니다(구형/다른 인코딩 계열).
+SUWN-BINEX
+ICY 200 OK 뒤 바이너리 데이터가 나오지만 0xD3 기반 RTCM3 프레임이 아님
+BINEX는 별도 포맷입니다.
+현재 코드와의 직접 연관
+
+파서는 RTCM3 프리앰블 0xD3만 찾습니다:
+rtcm_parser.py (line 3)
+실제 파싱 시작도 combined_buffer[index] == 0xD3 조건:
+rtcm_parser.py (line 67)
+그래서:
+
+소켓은 연결되고(Connected)
+바이트는 읽어도(Read xxx bytes)
+0xD3 유효 프레임이 없으면 publish가 0건
+결과적으로 /ntrip_client/rtcm Hz가 안 뜹니다.
+질문하신 4개 차이 정리
+
+SUWN-BINEX: BINEX 포맷(현재 체인과 비호환)
+SUWN-RTCM23: RTCM 2.3 계열(현재 RTCM3 파서와 비호환)
+SUWN-RTCM31: RTCM 3.1 계열(현재 체인 호환)
+SUWN-RTCM32: RTCM 3.2 계열(현재 체인 호환)
+운용 관점
+
+현재 구성에서는 SUWN-RTCM31 또는 SUWN-RTCM32를 쓰는 게 맞습니다.
+SUWN-RTCM31에서 공분산이 안정됐다면, 그게 지금 시스템과 가장 맞는 선택입니다.

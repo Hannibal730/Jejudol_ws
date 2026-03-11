@@ -26,7 +26,7 @@ class ConeDetectionNode(Node):
         self.declare_parameter('topic', '/image_raw/compressed')
         self.declare_parameter('conf', 0.3)
         self.declare_parameter('device', '')
-        self.declare_parameter('bev_params', 'bev_params_7.npz')
+        self.declare_parameter('bev_params', 'bev_params_0307.npz')
         self.declare_parameter('obstacle_threshold', 0.1)
 
         # 파라미터 값 읽기
