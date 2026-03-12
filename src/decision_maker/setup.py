@@ -13,10 +13,9 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='hannibal',
-    maintainer_email='hannibal@todo.todo',
+    maintainer_email='cds730@naver.com',
     description='Decision node for selecting steering and throttle commands.',
     license='Apache-2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'decision = decision_maker.decision:main',
