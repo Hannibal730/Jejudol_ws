@@ -162,11 +162,11 @@ class LaneFollowerNode(Node):
             self.use_undistort = False
 
         # 3. 주행 파라미터
-        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0024, 1.5, 0.00328
+        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0017 , 1.85, 0.0026
         self.tracked_lanes = {'left': {'coeff': None, 'age': 0}, 'right': {'coeff': None, 'age': 0}}
         self.tracked_center_path = {'coeff': None}
         self.SMOOTHING_ALPHA = 0.6
-        self.MAX_LANE_AGE = 10    # 30 Hz 기준으로 1프레임은 약 0.033초 (즉, 30프레임이 1초)
+        self.MAX_LANE_AGE = 90    # 30 Hz 기준으로 1프레임은 약 0.033초 (즉, 30프레임이 1초)
         self.L = 0.73  # 후륜축-전륜축 중심간 거리
 
         self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4, 0.6
@@ -177,9 +177,9 @@ class LaneFollowerNode(Node):
         self.MAX_STEER_DEG = 23.0
         self.prev_steer_deg = 0.0
 
-        self.CURV_A_REF = 5e-4
-        self.W_CURVE = 0.5
-        self.W_SPEED = 0.5
+        self.CURV_A_REF = 1e-4
+        self.W_CURVE = 0.8
+        self.W_SPEED = 0.2
         self.LD_ALPHA = 0.7
         self.ld_filtered = self.MAX_LOOKAHEAD_DISTANCE
         self.MAX_STEER_RATE = 6.0
@@ -659,7 +659,7 @@ def main(args=None):
 
     package_share_directory = get_package_share_directory('yolotl_ros2')
     default_weights = os.path.join(package_share_directory, 'config', 'weights3.pt')
-    default_params = os.path.join(package_share_directory, 'config', 'bev_params.npz')
+    default_params = os.path.join(package_share_directory, 'config', 'bev_params_0312.npz')
     default_calib = os.path.join(package_share_directory, 'config', 'camera_calibration.pkl')
 
     parser.add_argument('--weights', default=default_weights, help='Path to model weights')
