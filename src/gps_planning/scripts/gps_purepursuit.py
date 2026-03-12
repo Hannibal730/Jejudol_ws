@@ -170,7 +170,8 @@ class GpsPurePursuitNode(Node):
         x, y = goal_in_target
         ld2 = max(x * x + y * y, 1e-6)
         steer_rad = math.atan2(2.0 * self.wheelbase * y, ld2)
-        steer_deg = math.degrees(steer_rad)
+        # Invert steering sign so left/right output direction is swapped.
+        steer_deg = -math.degrees(steer_rad)
         return max(-self.max_steer_deg, min(self.max_steer_deg, steer_deg))
 
     def _publish_steer(self, steer_deg: float) -> None:

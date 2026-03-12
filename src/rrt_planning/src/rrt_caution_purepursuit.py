@@ -188,7 +188,7 @@ class MaRRTCautionPurePursuit(Node):
         # 순수 추종 제어 계산
         alpha = math.atan2(lookahead_point[1], lookahead_point[0])
         steer_rad = math.atan2(2.0 * self.wheelbase * math.sin(alpha), Ld)
-        steer_deg = math.degrees(steer_rad)
+        steer_deg = - math.degrees(steer_rad)
         steer_deg = max(-self.max_steer_deg, min(self.max_steer_deg, steer_deg))
         self.get_logger().info(
             f'Caution Pure Pursuit: Lookahead=({lookahead_point[0]:.2f}, {lookahead_point[1]:.2f}), '
