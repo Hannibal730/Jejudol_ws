@@ -21,7 +21,7 @@
 #define KP 0.6
 #define KI 0.0
 #define KD 0.0
-#define PID_DEADBAND 0.05
+#define PID_DEADBAND 0.07
 // 조향 속도 미세 상향: 기존 실질 최대 50% -> 60%
 #define STEER_PWM_GAIN 0.60
 // 조향 각속도 로그용 저역통과필터(0~1, 클수록 반응 빠름)
@@ -44,7 +44,7 @@ volatile uint32_t accel_last_us = 0;
 
 int DIR1 = 10, PWM1 = 11, DIR2 = 6, PWM2 = 7, DIR3 = 8, PWM3 = 9;
 int POTPin = A0;
-#define MIN_DRIVE_PWM 60
+#define MIN_DRIVE_PWM 0
 #define MAX_DRIVE_PWM 250
 
 #define SERIAL_BUFFER_SIZE 48
@@ -63,7 +63,7 @@ unsigned long lastSteerMs = 0;
 
 #define PULSE_MIN 500
 #define PULSE_MAX 2500
-#define SIGNAL_THRESHOLD 0.05 
+#define SIGNAL_THRESHOLD 0.05
 
 volatile uint32_t steer_last_us = 0, manual_last_us = 0, auto_last_us = 0;
 
