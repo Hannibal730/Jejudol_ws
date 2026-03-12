@@ -22,11 +22,10 @@ setup(
     maintainer_email='seonjuhan1@gmail.com',
     description='YOLO based Lane Segmentation for ROS 2',
     license='TODO: License declaration',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            # 1. 메인 자율주행 노드 (demo_with_ros2.py)
-            'lane_follower = yolotl_ros2.demo_with_ros2:main',
+            # 1. 메인 자율주행 노드 (main.py)
+            'lane_follower = yolotl_ros2.main:main',
             
             # 2. 로컬 테스트 노드 (demo.py)
             'local_demo = yolotl_ros2.demo:main',
