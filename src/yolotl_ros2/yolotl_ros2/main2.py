@@ -95,18 +95,30 @@ def overlay_polyline(image, coeff, color=(0, 0, 255), step=4, thickness=2):
 
 
 def offset_points_along_normal(coeff, ys, offset_px):
-    # x = f(y) 곡선에서 각 점의 법선 방향으로 offset_px 만큼 이동
+    """
+    [수정됨] 법선 이동 시 Y좌표가 역전되는 현상(Cusp)을 방지하기 위해,
+    Y좌표는 고정하고 X축 방향으로만 secant 배율을 곱해 이동시킵니다.
+    """
     ys = np.asarray(ys, dtype=np.float32)
     xs = np.polyval(coeff, ys)
 
+    # 1. 현재 곡선의 기울기(미분값) dx/dy 계산
     dcoeff = np.polyder(coeff)
     dx_dy = np.polyval(dcoeff, ys)
-    denom = np.sqrt(1.0 + np.square(dx_dy)) + 1e-6
-
-    x_off = xs + (offset_px / denom)
-    y_off = ys - (offset_px * dx_dy / denom)
+    
+    # 2. 기울기가 너무 커서 X 이동량이 무한대로 발산하는 것을 방지 (약 78도 제한)
+    # 기존보다 클리핑 범위를 좁혀 극단적인 커브에서 오프셋이 화면 밖으로 튀는 것을 막습니다.
+    dx_dy = np.clip(dx_dy, -5.0, 5.0) 
+    
+    # 3. 수직 거리(offset_px)를 유지하기 위한 수평(X축) 이동량 계산
+    # 공식: Delta X = offset * sqrt(1 + (dx/dy)^2)
+    delta_x = offset_px * np.sqrt(1.0 + np.square(dx_dy))
+    
+    # 4. 좌표 적용 (Y는 절대 건드리지 않음)
+    x_off = xs + delta_x
+    y_off = ys 
+    
     return x_off, y_off
-
 
 # ==============================================================================
 # ROS 2 노드 클래스
