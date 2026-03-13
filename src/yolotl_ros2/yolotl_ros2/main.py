@@ -162,7 +162,7 @@ class LaneFollowerNode(Node):
             self.use_undistort = False
 
         # 3. 주행 파라미터
-        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0017 , 1.85, 0.0026
+        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0034 , 1.25, 0.0037
         self.tracked_lanes = {'left': {'coeff': None, 'age': 0}, 'right': {'coeff': None, 'age': 0}}
         self.tracked_center_path = {'coeff': None}
         self.SMOOTHING_ALPHA = 0.6

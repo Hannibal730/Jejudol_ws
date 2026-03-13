@@ -162,11 +162,11 @@ class LaneFollowerNode(Node):
             self.use_undistort = False
 
         # 3. 주행 파라미터
-        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0017 , 1.85, 0.0026
+        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0034 , 1.25, 0.0037
         self.tracked_lanes = {'left': {'coeff': None, 'age': 0}, 'right': {'coeff': None, 'age': 0}}
         self.tracked_center_path = {'coeff': None}
-        self.SMOOTHING_ALPHA = 0.6
-        self.MAX_LANE_AGE = 90    # 30 Hz 기준으로 1프레임은 약 0.033초 (즉, 30프레임이 1초)
+        self.SMOOTHING_ALPHA = 0.4
+        self.MAX_LANE_AGE = 7    # 30 Hz 기준으로 1프레임은 약 0.033초 (즉, 30프레임이 1초)
         self.L = 0.73  # 후륜축-전륜축 중심간 거리
 
         self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4, 0.6
@@ -438,6 +438,7 @@ class LaneFollowerNode(Node):
         # 6. Steering
         if lane_detected_bool:
             center_points = []
+            target_center_lane_coeff = None
             LANE_WIDTH_M = 1.5
             lane_width_pixels = LANE_WIDTH_M / self.m_per_pixel_x
 
@@ -448,27 +449,38 @@ class LaneFollowerNode(Node):
                     x_center = (np.polyval(final_left_coeff, y) + np.polyval(final_right_coeff, y)) / 2.0
                     center_points.append([float(x_center), float(y)])
             elif final_left_coeff is not None:
-                # 좌차선만 있을 때는 우측(차로 중심) 법선 방향으로 half lane width 오프셋
+                # 좌차선만 있을 때는 법선 오프셋 + 같은 높이(y)에서 항상 우측에 있도록 제약
                 x_centers, y_centers = offset_points_along_normal(
                     final_left_coeff,
                     ys_samples,
                     lane_width_pixels / 2.0
                 )
                 for x_center, y_center in zip(x_centers, y_centers):
-                    if 0 <= x_center < self.bev_w and 0 <= y_center < self.bev_h:
-                        center_points.append([float(x_center), float(y_center)])
+                    if not (0 <= x_center < self.bev_w and 0 <= y_center < self.bev_h):
+                        continue
+
+                    lane_x_same_height = np.polyval(final_left_coeff, y_center)
+                    if x_center <= lane_x_same_height:
+                        continue
+
+                    center_points.append([float(x_center), float(y_center)])
             elif final_right_coeff is not None:
-                # 우차선만 있을 때는 좌측(차로 중심) 법선 방향으로 half lane width 오프셋
+                # 우차선만 있을 때는 법선 오프셋 + 같은 높이(y)에서 항상 좌측에 있도록 제약
                 x_centers, y_centers = offset_points_along_normal(
                     final_right_coeff,
                     ys_samples,
                     -lane_width_pixels / 2.0
                 )
                 for x_center, y_center in zip(x_centers, y_centers):
-                    if 0 <= x_center < self.bev_w and 0 <= y_center < self.bev_h:
-                        center_points.append([float(x_center), float(y_center)])
+                    if not (0 <= x_center < self.bev_w and 0 <= y_center < self.bev_h):
+                        continue
 
-            target_center_lane_coeff = None
+                    lane_x_same_height = np.polyval(final_right_coeff, y_center)
+                    if x_center >= lane_x_same_height:
+                        continue
+
+                    center_points.append([float(x_center), float(y_center)])
+
             if len(center_points) > 10:
                 center_points_np = np.array(center_points, dtype=np.float32)
                 center_points_np = center_points_np[np.argsort(center_points_np[:, 1])]
@@ -640,7 +652,7 @@ def main(args=None):
 
     package_share_directory = get_package_share_directory('yolotl_ros2')
     default_weights = os.path.join(package_share_directory, 'config', 'weights3.pt')
-    default_params = os.path.join(package_share_directory, 'config', 'bev_params_0312.npz')
+    default_params = os.path.join(package_share_directory, 'config', 'bev_params_ext.npz')
     default_calib = os.path.join(package_share_directory, 'config', 'camera_calibration.pkl')
 
     parser.add_argument('--weights', default=default_weights, help='Path to model weights')
