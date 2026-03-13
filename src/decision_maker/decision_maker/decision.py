@@ -7,6 +7,7 @@ import termios
 import threading
 import time
 import tty
+import math
 
 import rclpy
 from rclpy.node import Node
@@ -14,20 +15,37 @@ from std_msgs.msg import Bool, Float32, Int8
 
 # 실험용 변수 기본값(한 곳에서 관리)
 DEFAULTS = {
-    'publish_rate_hz': 20.0,
+    'publish_rate_hz': 30.0,
     'log_rate_hz': 1.0,
+    
     'emergency_deceleration_sec': 1.5,
     'emergency_off_delay_sec': 0.8,
+    
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,
+    'throttle_curve_k': 0.0,  # k가 0.0이면 선형 감속. 그리고 k가 커질수록 같은 steer에서 throttle이 더 빨리 min 쪽으로 내려간다.
+    # 예시(현재 기본값 기준, max=0.5, min=0.2, abs_max=23):
+    # |steer|=10도일 때
+    # k=0: 0.3696
+    # k=1: 0.3327
+    # k=2: 0.2985
+    # k=3: 0.2700
+    # k=4: 0.2481
+    # k=5: 0.2323   
+    
     'auto_throttle_moon_course': 0.15,
+    
     'auto_throttle_yolotl_max': 0.5,
     'auto_throttle_yolotl_min': 0.2,
+    
     'auto_throttle_rrt_max': 0.3,
     'auto_throttle_rrt_min': 0.2,
+    
     'auto_throttle_gps': 0.2,
     'auto_throttle_static_obstacle': 0.4,
+
     'num_static_obstacle_threshold': 4,
+    
     'mannual_deceleration_sec': 2.5,
     'manual_stop_use_spacebar': True,
 }
@@ -82,6 +100,7 @@ class DecisionNode(Node):
         self.auto_throttle_rrt_min = float(self.get_parameter('auto_throttle_rrt_min').value)
         self.auto_throttle_gps = float(self.get_parameter('auto_throttle_gps').value)
         self.auto_throttle_static_obstacle = float(self.get_parameter('auto_throttle_static_obstacle').value)
+        self.throttle_curve_k = float(self.get_parameter('throttle_curve_k').value)
         self.num_static_obstacle_threshold = int(self.get_parameter('num_static_obstacle_threshold').value)
         self.mannual_deceleration_sec = float(self.get_parameter('mannual_deceleration_sec').value)
         self.manual_stop_use_spacebar = bool(self.get_parameter('manual_stop_use_spacebar').value)
@@ -332,7 +351,15 @@ class DecisionNode(Node):
             0.0,
             1.0,
         )
-        return throttle_max - ratio * (throttle_max - throttle_min)
+        k = max(0.0, self.throttle_curve_k)
+        if k < 1e-6:
+            shaped = ratio
+        else:
+            # k가 커질수록 같은 steer에서 throttle이 더 빨리 min 쪽으로 내려간다.
+            # (0~1 정규화 유지: ratio=0 -> 0, ratio=1 -> 1)
+            shaped = math.expm1(-k * ratio) / math.expm1(-k)
+
+        return throttle_max - shaped * (throttle_max - throttle_min)
 
     def _get_mission_state(self) -> str:
         # 처리 속도와 가독성을 위해 상태를 한 번만 판정
