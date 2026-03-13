@@ -620,7 +620,7 @@ def main(args=None):
     parser.add_argument('--param-file', default=default_params, help='Path to BEV parameters file')
     parser.add_argument('--calib-file', default=default_calib, help='Path to camera calibration pkl file')
     parser.add_argument('--img-size', type=int, default=640)
-    parser.add_argument('--conf-thres', type=float, default=0.8)
+    parser.add_argument('--conf-thres', type=float, default=0.5)
     parser.add_argument('--iou-thres', type=float, default=0.5)
     parser.add_argument('--device', default='0')
     parser.add_argument('--topic', type=str, default='/image_raw/compressed', help='ROS 2 Image Topic')
