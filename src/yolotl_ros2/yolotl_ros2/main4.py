@@ -1,0 +1,778 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import sys
+import os
+import pickle
+
+import numpy as np
+import cv2
+import torch
+import argparse
+from math import atan2, degrees, sqrt
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
+from sensor_msgs.msg import Image, CompressedImage
+from std_msgs.msg import Float32, Bool
+from nav_msgs.msg import Path
+from geometry_msgs.msg import PoseStamped
+from ament_index_python.packages import get_package_share_directory
+from ultralytics import YOLO
+
+from cv_bridge import CvBridge
+
+
+# ==============================================================================
+# 유틸리티 함수
+# ==============================================================================
+def morph_close(binary_mask, ksize=5):
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (ksize, ksize))
+    return cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+
+
+def remove_small_components(binary_mask, min_size=300):
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary_mask, connectivity=8
+    )
+    cleaned = np.zeros_like(binary_mask)
+    for i in range(1, num_labels):
+        if stats[i, cv2.CC_STAT_AREA] >= min_size:
+            cleaned[labels == i] = 255
+    return cleaned
+
+
+def keep_top2_components(binary_mask, min_area=300):
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary_mask, connectivity=8
+    )
+    if num_labels <= 1:
+        return np.zeros_like(binary_mask)
+
+    comps = []
+    for i in range(1, num_labels):
+        if stats[i, cv2.CC_STAT_AREA] >= min_area:
+            comps.append((i, stats[i, cv2.CC_STAT_AREA]))
+
+    comps.sort(key=lambda x: x[1], reverse=True)
+
+    cleaned = np.zeros_like(binary_mask)
+    for i in range(min(len(comps), 2)):
+        idx = comps[i][0]
+        cleaned[labels == idx] = 255
+    return cleaned
+
+
+def final_filter(bev_mask):
+    f2 = morph_close(bev_mask, ksize=5)
+    f3 = remove_small_components(f2, min_size=10000)
+    f4 = keep_top2_components(f3, min_area=300)
+    return f4
+
+
+def overlay_points(image, xs, ys, color=(0, 255, 255), radius=2):
+    if xs is None or ys is None:
+        return image
+
+    h, w = image.shape[:2]
+    for x, y in zip(xs, ys):
+        xi, yi = int(round(x)), int(round(y))
+        if 0 <= xi < w and 0 <= yi < h:
+            cv2.circle(image, (xi, yi), radius, color, -1)
+
+    return image
+
+
+def overlay_point_path(image, xs, ys, color=(0, 0, 255), thickness=2):
+    if xs is None or ys is None or len(xs) < 2:
+        return image
+
+    pts = np.stack([xs, ys], axis=1).astype(np.int32)
+    cv2.polylines(image, [pts], False, color, thickness)
+    return image
+
+
+def extract_centerline_points_from_component(component_mask, min_points_per_y=1, y_step=1):
+    """
+    하나의 connected component(binary mask)에서
+    각 y마다 x의 중심점(mean)을 구해 centerline points를 만든다.
+    """
+    h, _ = component_mask.shape
+    ys_center = []
+    xs_center = []
+
+    for y in range(0, h, y_step):
+        xs = np.where(component_mask[y] > 0)[0]
+        if len(xs) >= min_points_per_y:
+            x_center = float(np.mean(xs))
+            ys_center.append(float(y))
+            xs_center.append(x_center)
+
+    if len(ys_center) == 0:
+        return None, None
+
+    ys_center = np.array(ys_center, dtype=np.float32)
+    xs_center = np.array(xs_center, dtype=np.float32)
+
+    sort_idx = np.argsort(ys_center)
+    return ys_center[sort_idx], xs_center[sort_idx]
+
+
+def resample_polyline_by_y(xs, ys, y_min, y_max, y_step=1):
+    """
+    주어진 polyline(xs, ys)을 y축 기준으로 보간해서
+    일정 y 간격의 점열로 만든다.
+    """
+    if xs is None or ys is None or len(xs) < 2:
+        return None, None
+
+    ys = np.asarray(ys, dtype=np.float32)
+    xs = np.asarray(xs, dtype=np.float32)
+
+    sort_idx = np.argsort(ys)
+    ys = ys[sort_idx]
+    xs = xs[sort_idx]
+
+    y_query = np.arange(y_min, y_max + 1, y_step, dtype=np.float32)
+
+    valid_mask = (y_query >= ys[0]) & (y_query <= ys[-1])
+    y_query = y_query[valid_mask]
+    if len(y_query) < 2:
+        return None, None
+
+    x_query = np.interp(y_query, ys, xs)
+    return x_query.astype(np.float32), y_query.astype(np.float32)
+
+
+def compute_midpoints(left_xs, left_ys, right_xs, right_ys, y_step=1):
+    """
+    좌/우 차선을 같은 y축 기준으로 resampling 후 midpoint 계산
+    """
+    if left_xs is None or right_xs is None:
+        return None, None
+
+    y_min = int(max(np.min(left_ys), np.min(right_ys)))
+    y_max = int(min(np.max(left_ys), np.max(right_ys)))
+    if y_max - y_min < 2:
+        return None, None
+
+    lx, ly = resample_polyline_by_y(left_xs, left_ys, y_min, y_max, y_step=y_step)
+    rx, ry = resample_polyline_by_y(right_xs, right_ys, y_min, y_max, y_step=y_step)
+
+    if lx is None or rx is None:
+        return None, None
+
+    common_n = min(len(lx), len(rx))
+    if common_n < 2:
+        return None, None
+
+    center_xs = (lx[:common_n] + rx[:common_n]) * 0.5
+    center_ys = ly[:common_n]
+    return center_xs.astype(np.float32), center_ys.astype(np.float32)
+
+
+def offset_polyline_points(xs, ys, offset_px, direction=1.0):
+    """
+    점열의 국소 접선을 이용해서 법선 방향으로 offset.
+    direction=+1 / -1 로 좌우 방향 선택
+    """
+    if xs is None or ys is None or len(xs) < 2:
+        return None, None
+
+    xs = np.asarray(xs, dtype=np.float32)
+    ys = np.asarray(ys, dtype=np.float32)
+
+    out_xs = []
+    out_ys = []
+
+    n = len(xs)
+    window = 30  # 노이즈를 줄이기 위해 기울기를 구할 참조 간격 설정
+    for i in range(n):
+        idx_prev = max(0, i - window)
+        idx_next = min(n - 1, i + window)
+        
+        if idx_prev == idx_next:
+            dx, dy = 0, 1
+        else:
+            dx = xs[idx_next] - xs[idx_prev]
+            dy = ys[idx_next] - ys[idx_prev]
+
+        norm = np.sqrt(dx * dx + dy * dy) + 1e-6
+
+        # Y좌표가 위에서 아래(0 -> H)로 커지므로 접선(dx, dy)은 아래를 향함
+        # 기본 법선 벡터가 화면 '오른쪽(X증가)'을 가리키도록 (dy, -dx) 사용
+        # 그래야 direction=+1.0 (좌차선)일 때 우측으로, direction=-1.0 (우차선)일 때 좌측으로 정상 이동함
+        nx = dy / norm
+        ny = -dx / norm
+
+        xo = xs[i] + direction * offset_px * nx
+        yo = ys[i] + direction * offset_px * ny
+
+        out_xs.append(float(xo))
+        out_ys.append(float(yo))
+
+    out_xs = np.array(out_xs, dtype=np.float32)
+    out_ys = np.array(out_ys, dtype=np.float32)
+
+    # 결과물(X좌표)에 이동 평균을 적용하여 한 번 더 부드럽게 평활화
+    if len(out_xs) >= 3:
+        k_size = 5
+        padded_xs = np.pad(out_xs, (k_size//2, k_size//2), mode='edge')
+        out_xs = np.convolve(padded_xs, np.ones(k_size)/k_size, mode='valid')
+
+    return out_xs, out_ys
+
+
+# ==============================================================================
+# ROS 2 노드 클래스
+# ==============================================================================
+class LaneFollowerNode(Node):
+    def __init__(self, opt):
+        super().__init__('lane_follower_node')
+        self.opt = opt
+        self.get_logger().info("[Lane Follower] Initializing...")
+
+        self.bridge = CvBridge()
+
+        # 1. 모델 로드
+        device_str = self.opt.device
+        if device_str.isdigit() and torch.cuda.is_available():
+            self.device = torch.device(f'cuda:{device_str}')
+        else:
+            self.device = torch.device('cpu')
+
+        self.get_logger().info(f"Loading weights from: {opt.weights}")
+        self.model = YOLO(opt.weights).to(self.device)
+
+        # 2. BEV 파라미터 로드
+        self.get_logger().info(f"Loading params from: {opt.param_file}")
+        try:
+            params = np.load(opt.param_file)
+            self.bev_params = {
+                'src_points': params['src_points'],
+                'dst_points': params['dst_points']
+            }
+            self.bev_w, self.bev_h = int(params['warp_w']), int(params['warp_h'])
+            self.get_logger().info(
+                f"[SUCCESS] Loaded Params: BEV Size={self.bev_w}x{self.bev_h}"
+            )
+        except Exception as e:
+            self.get_logger().error(f"[FATAL] Failed to load BEV params: {e}")
+            self.get_logger().error(f"Check file path: {opt.param_file}")
+            sys.exit(1)
+
+        # 2-1. 카메라 캘리브레이션(pkl) 로드
+        self.get_logger().info(f"Loading camera calibration from: {opt.calib_file}")
+        try:
+            with open(opt.calib_file, 'rb') as f:
+                calib = pickle.load(f)
+
+            self.camera_matrix = calib['camera_matrix']
+            self.dist_coeffs = calib['dist_coeffs']
+            self.use_undistort = True
+            self.get_logger().info("[SUCCESS] Loaded camera calibration data")
+        except Exception as e:
+            self.get_logger().warn(f"[WARN] Failed to load camera calibration file: {e}")
+            self.get_logger().warn("[WARN] Proceeding without undistortion")
+            self.camera_matrix = None
+            self.dist_coeffs = None
+            self.use_undistort = False
+
+        # 3. 주행 파라미터
+        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0034, 1.25, 0.0037
+
+        self.tracked_lanes = {
+            'left': {'xs': None, 'ys': None, 'age': 0},
+            'right': {'xs': None, 'ys': None, 'age': 0}
+        }
+        self.tracked_center_path = {'xs': None, 'ys': None}
+
+        self.MAX_LANE_AGE = 7
+        self.L = 0.73
+
+        self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4, 0.6
+        self.current_throttle = self.THROTTLE_MIN
+
+        self.MIN_LOOKAHEAD_DISTANCE = 1.8
+        self.MAX_LOOKAHEAD_DISTANCE = 3.5
+        self.MAX_STEER_DEG = 23.0
+        self.prev_steer_deg = 0.0
+        self.MAX_STEER_RATE = 12.0
+
+        self.last_valid_ld = float(self.MAX_LOOKAHEAD_DISTANCE)
+
+        # 4. ROS Setup
+        self.pub_steering = self.create_publisher(Float32, 'auto_steer_angle_yolotl', 1)
+        self.pub_lane_status = self.create_publisher(Bool, 'lane_detection_status', 1)
+        self.pub_path = self.create_publisher(Path, 'lane_path', 10)
+        self.pub_drivable_area = self.create_publisher(
+            CompressedImage, 'drivable_area/compressed', 10
+        )
+        self.pub_lookahead = self.create_publisher(Float32, 'lookahead_distance', 1)
+
+        if 'compressed' in self.opt.topic:
+            self.msg_type = CompressedImage
+        else:
+            self.msg_type = Image
+
+        self.sub_image = self.create_subscription(
+            self.msg_type,
+            self.opt.topic,
+            self.image_callback,
+            qos_profile_sensor_data
+        )
+        self.sub_throttle = self.create_subscription(
+            Float32,
+            'auto_throttle',
+            self.throttle_callback,
+            1
+        )
+
+        cv2.namedWindow("Original Camera View", cv2.WINDOW_AUTOSIZE)
+        cv2.namedWindow("Final Path & Logs (on BEV)", cv2.WINDOW_AUTOSIZE)
+
+        self.frame_count = 0
+
+    def throttle_callback(self, msg):
+        self.current_throttle = np.clip(msg.data, self.THROTTLE_MIN, self.THROTTLE_MAX)
+
+    def undistort_image(self, image):
+        if not self.use_undistort or self.camera_matrix is None or self.dist_coeffs is None:
+            return image
+
+        h, w = image.shape[:2]
+
+        new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(
+            self.camera_matrix,
+            self.dist_coeffs,
+            (w, h),
+            1,
+            (w, h)
+        )
+
+        undistorted = cv2.undistort(
+            image,
+            self.camera_matrix,
+            self.dist_coeffs,
+            None,
+            new_camera_matrix
+        )
+
+        x, y, rw, rh = roi
+        if rw > 0 and rh > 0:
+            undistorted = undistorted[y:y + rh, x:x + rw]
+            undistorted = cv2.resize(undistorted, (w, h))
+
+        return undistorted
+
+    def do_bev_transform(self, image):
+        M = cv2.getPerspectiveTransform(
+            self.bev_params['src_points'],
+            self.bev_params['dst_points']
+        )
+        return cv2.warpPerspective(
+            image, M, (self.bev_w, self.bev_h), flags=cv2.INTER_LINEAR
+        )
+
+    def draw_path_on_original(self, image, xs, ys, color=(0, 255, 0), thickness=3):
+        if xs is None or ys is None or len(xs) < 2:
+            return image
+
+        M_inv = cv2.getPerspectiveTransform(
+            self.bev_params['dst_points'],
+            self.bev_params['src_points']
+        )
+
+        pts_bev = np.array([np.stack([xs, ys], axis=1)], dtype=np.float32)
+        pts_orig = cv2.perspectiveTransform(pts_bev, M_inv)
+        draw_img = image.copy()
+        cv2.polylines(draw_img, [np.int32(pts_orig)[0]], False, color, thickness)
+        return draw_img
+
+    def image_to_vehicle(self, pt_bev):
+        u, v = pt_bev
+        x_vehicle = (self.bev_h - v) * self.m_per_pixel_y + self.y_offset_m
+        y_vehicle = (self.bev_w / 2 - u) * self.m_per_pixel_x
+        return x_vehicle, y_vehicle
+
+    def image_callback(self, msg):
+        self.frame_count += 1
+        if self.frame_count % 60 == 0:
+            if self.msg_type == Image:
+                self.get_logger().info(
+                    f"[Alive] Image Size: {msg.width}x{msg.height}, enc={msg.encoding}"
+                )
+            else:
+                self.get_logger().info(
+                    f"[Alive] Compressed Image Received, format={msg.format}"
+                )
+
+        try:
+            if self.msg_type == Image:
+                img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            else:
+                np_arr = np.frombuffer(msg.data, dtype=np.uint8)
+                img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+            if img is None:
+                return
+
+            self.process_image(np.ascontiguousarray(img))
+
+        except Exception as e:
+            self.get_logger().error(f"Decode Error: {e}")
+
+    def process_image(self, im0s):
+        im0s = self.undistort_image(im0s)
+
+        steer_deg = None
+        goal_point_bev = None
+        lane_detected_bool = False
+        dynamic_lookahead_distance = self.last_valid_ld
+
+        annotated_frame = im0s.copy()
+
+        left_fit_xs, left_fit_ys = None, None
+        right_fit_xs, right_fit_ys = None, None
+        center_fit_xs, center_fit_ys = None, None
+
+        # 1. BEV Transform
+        bev_image_input = self.do_bev_transform(im0s)
+
+        # 2. Inference
+        results = self.model(
+            bev_image_input,
+            imgsz=self.opt.img_size,
+            conf=self.opt.conf_thres,
+            iou=self.opt.iou_thres,
+            device=self.device,
+            verbose=False
+        )
+        result = results[0]
+
+        # 3. Mask Processing
+        combined_mask_bev = np.zeros(result.orig_shape[:2], dtype=np.uint8)
+        if result.masks is not None:
+            confidences = result.boxes.conf
+            for i, mask_tensor in enumerate(result.masks.data):
+                if confidences[i] >= self.opt.conf_thres:
+                    mask_np = (mask_tensor.cpu().numpy() * 255).astype(np.uint8)
+                    if mask_np.shape != result.orig_shape[:2]:
+                        mask_np = cv2.resize(
+                            mask_np,
+                            (result.orig_shape[1], result.orig_shape[0])
+                        )
+                    combined_mask_bev = np.maximum(combined_mask_bev, mask_np)
+
+        final_mask = final_filter(combined_mask_bev)
+        bev_im_for_drawing = bev_image_input.copy()
+
+        # 4. Lane Extraction: component -> y별 중심점 추출
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+            final_mask, connectivity=8
+        )
+        current_detections = []
+
+        if num_labels > 1:
+            for i in range(1, num_labels):
+                if stats[i, cv2.CC_STAT_AREA] >= 100:
+                    component_mask = np.zeros_like(final_mask, dtype=np.uint8)
+                    component_mask[labels == i] = 255
+
+                    ys_center, xs_center = extract_centerline_points_from_component(
+                        component_mask,
+                        min_points_per_y=1,
+                        y_step=1
+                    )
+
+                    if ys_center is None or len(ys_center) < 5:
+                        continue
+
+                    x_bottom = xs_center[-1]
+
+                    current_detections.append({
+                        'xs': xs_center,
+                        'ys': ys_center,
+                        'x_bottom': x_bottom
+                    })
+
+        current_detections.sort(key=lambda c: c['x_bottom'])
+
+        # 5. Tracking
+        left_lane_tracked = self.tracked_lanes['left']
+        right_lane_tracked = self.tracked_lanes['right']
+        current_left, current_right = None, None
+
+        if len(current_detections) == 2:
+            current_left, current_right = current_detections[0], current_detections[1]
+
+        elif len(current_detections) == 1:
+            detected_lane = current_detections[0]
+
+            dist_to_left = abs(detected_lane['x_bottom'] - left_lane_tracked['xs'][-1]) \
+                if left_lane_tracked['xs'] is not None else float('inf')
+            dist_to_right = abs(detected_lane['x_bottom'] - right_lane_tracked['xs'][-1]) \
+                if right_lane_tracked['xs'] is not None else float('inf')
+
+            if dist_to_left < dist_to_right and left_lane_tracked['xs'] is not None:
+                current_left = detected_lane
+            elif dist_to_right < dist_to_left and right_lane_tracked['xs'] is not None:
+                current_right = detected_lane
+            else:
+                if detected_lane['x_bottom'] < self.bev_w / 2:
+                    current_left = detected_lane
+                else:
+                    current_right = detected_lane
+
+        if current_left is not None:
+            left_fit_xs = current_left['xs']
+            left_fit_ys = current_left['ys']
+            left_lane_tracked['xs'] = current_left['xs']
+            left_lane_tracked['ys'] = current_left['ys']
+            left_lane_tracked['age'] = 0
+        else:
+            left_lane_tracked['age'] += 1
+            if left_lane_tracked['age'] > self.MAX_LANE_AGE:
+                left_lane_tracked['xs'] = None
+                left_lane_tracked['ys'] = None
+
+        if current_right is not None:
+            right_fit_xs = current_right['xs']
+            right_fit_ys = current_right['ys']
+            right_lane_tracked['xs'] = current_right['xs']
+            right_lane_tracked['ys'] = current_right['ys']
+            right_lane_tracked['age'] = 0
+        else:
+            right_lane_tracked['age'] += 1
+            if right_lane_tracked['age'] > self.MAX_LANE_AGE:
+                right_lane_tracked['xs'] = None
+                right_lane_tracked['ys'] = None
+
+        final_left_xs, final_left_ys = left_lane_tracked['xs'], left_lane_tracked['ys']
+        final_right_xs, final_right_ys = right_lane_tracked['xs'], right_lane_tracked['ys']
+
+        lane_detected_bool = (final_left_xs is not None) or (final_right_xs is not None)
+        self.pub_lane_status.publish(Bool(data=lane_detected_bool))
+
+        # 6. Steering: 중앙 경로도 점 기반
+        if lane_detected_bool:
+            LANE_WIDTH_M = 1.5
+            lane_width_pixels = LANE_WIDTH_M / self.m_per_pixel_x
+
+            center_xs, center_ys = None, None
+
+            if final_left_xs is not None and final_right_xs is not None:
+                center_xs, center_ys = compute_midpoints(
+                    final_left_xs, final_left_ys,
+                    final_right_xs, final_right_ys,
+                    y_step=1
+                )
+
+            elif final_left_xs is not None:
+                center_xs, center_ys = offset_polyline_points(
+                    final_left_xs,
+                    final_left_ys,
+                    offset_px=lane_width_pixels / 2.0,
+                    direction=+1.0
+                )
+
+            elif final_right_xs is not None:
+                center_xs, center_ys = offset_polyline_points(
+                    final_right_xs,
+                    final_right_ys,
+                    offset_px=lane_width_pixels / 2.0,
+                    direction=-1.0
+                )
+
+            if center_xs is not None and len(center_xs) > 1:
+                self.tracked_center_path['xs'] = center_xs
+                self.tracked_center_path['ys'] = center_ys
+                center_fit_xs = center_xs
+                center_fit_ys = center_ys
+
+            if self.tracked_center_path['xs'] is not None and len(self.tracked_center_path['xs']) > 1:
+                final_center_xs = self.tracked_center_path['xs']
+                final_center_ys = self.tracked_center_path['ys']
+
+                path_msg = Path()
+                path_msg.header.frame_id = "base_link"
+                path_msg.header.stamp = self.get_clock().now().to_msg()
+
+                step = 20
+                for idx in range(len(final_center_xs) - 1, -1, -step):
+                    x_bev = final_center_xs[idx]
+                    y_bev = final_center_ys[idx]
+                    x_veh, y_veh = self.image_to_vehicle((x_bev, y_bev))
+
+                    pose = PoseStamped()
+                    pose.header = path_msg.header
+                    pose.pose.position.x = float(x_veh)
+                    pose.pose.position.y = float(y_veh)
+                    pose.pose.position.z = 0.0
+                    pose.pose.orientation.w = 1.0
+                    path_msg.poses.append(pose)
+
+                self.pub_path.publish(path_msg)
+
+                v_norm = (self.current_throttle - self.THROTTLE_MIN) / (
+                    self.THROTTLE_MAX - self.THROTTLE_MIN + 1e-6
+                )
+                v_norm = np.clip(v_norm, 0.0, 1.0)
+
+                LD_target = self.MIN_LOOKAHEAD_DISTANCE + (
+                    self.MAX_LOOKAHEAD_DISTANCE - self.MIN_LOOKAHEAD_DISTANCE
+                ) * v_norm
+
+                dynamic_lookahead_distance = float(np.clip(
+                    LD_target,
+                    self.MIN_LOOKAHEAD_DISTANCE,
+                    self.MAX_LOOKAHEAD_DISTANCE
+                ))
+
+                self.last_valid_ld = dynamic_lookahead_distance
+                self.pub_lookahead.publish(Float32(data=dynamic_lookahead_distance))
+
+                for idx in range(len(final_center_xs) - 1, -1, -1):
+                    x_bev = final_center_xs[idx]
+                    y_bev = final_center_ys[idx]
+                    x_veh, y_veh_right = self.image_to_vehicle((x_bev, y_bev))
+                    dist = sqrt(x_veh ** 2 + y_veh_right ** 2)
+
+                    if dist >= dynamic_lookahead_distance:
+                        goal_point_bev = (int(x_bev), int(y_bev))
+                        steer_rad = atan2(
+                            2.0 * self.L * y_veh_right,
+                            x_veh ** 2 + y_veh_right ** 2
+                        )
+
+                        raw_steer_deg = float(np.clip(
+                            -degrees(steer_rad),
+                            -self.MAX_STEER_DEG,
+                            self.MAX_STEER_DEG
+                        ))
+
+                        delta = np.clip(
+                            raw_steer_deg - self.prev_steer_deg,
+                            -self.MAX_STEER_RATE,
+                            self.MAX_STEER_RATE
+                        )
+                        steer_deg = float(self.prev_steer_deg + delta)
+
+                        self.prev_steer_deg = steer_deg
+                        self.pub_steering.publish(Float32(data=steer_deg))
+                        break
+            else:
+                dynamic_lookahead_distance = float(self.last_valid_ld)
+                self.pub_lookahead.publish(Float32(data=float(self.last_valid_ld)))
+        else:
+            dynamic_lookahead_distance = float(self.last_valid_ld)
+            self.pub_lookahead.publish(Float32(data=float(self.last_valid_ld)))
+
+        # 7. Visualization
+        try:
+            annotated_frame = result.plot()
+        except Exception:
+            pass
+
+        # 점열을 그냥 이어서 차선/경로 표현
+        overlay_point_path(bev_im_for_drawing, final_left_xs, final_left_ys, color=(255, 0, 0), thickness=2)
+        overlay_point_path(bev_im_for_drawing, final_right_xs, final_right_ys, color=(0, 0, 255), thickness=2)
+        overlay_point_path(
+            bev_im_for_drawing,
+            self.tracked_center_path['xs'],
+            self.tracked_center_path['ys'],
+            color=(0, 255, 0),
+            thickness=3
+        )
+
+        # 점 시각화
+        overlay_points(bev_im_for_drawing, left_fit_xs, left_fit_ys, color=(0, 0, 255), radius=2)
+        overlay_points(bev_im_for_drawing, right_fit_xs, right_fit_ys, color=(255, 0, 0), radius=2)
+        overlay_points(bev_im_for_drawing, center_fit_xs, center_fit_ys, color=(255, 255, 255), radius=2)
+
+        if goal_point_bev is not None:
+            cv2.circle(bev_im_for_drawing, goal_point_bev, 10, (0, 255, 255), -1)
+
+        if lane_detected_bool:
+            y_offset_px = int(self.y_offset_m / self.m_per_pixel_y)
+            true_origin_pt = (int(self.bev_w / 2), self.bev_h - 1 + y_offset_px)
+
+            radius_x_px = int(dynamic_lookahead_distance / self.m_per_pixel_x)
+            radius_y_px = int(dynamic_lookahead_distance / self.m_per_pixel_y)
+
+            cv2.ellipse(
+                bev_im_for_drawing,
+                true_origin_pt,
+                (radius_x_px, radius_y_px),
+                0,
+                0,
+                360,
+                (255, 255, 255),
+                2
+            )
+
+        steer_text = f"Steer: {steer_deg:.1f} deg" if steer_deg is not None else "Steer: N/A"
+        cv2.putText(bev_im_for_drawing, steer_text, (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        cv2.putText(bev_im_for_drawing, f"Lane Detected: {lane_detected_bool}", (10, 60),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        cv2.putText(bev_im_for_drawing, f"Lookahead: {dynamic_lookahead_distance:.2f}m", (10, 90),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+
+        original_with_center = self.draw_path_on_original(
+            im0s,
+            self.tracked_center_path['xs'],
+            self.tracked_center_path['ys'],
+            color=(0, 255, 0),
+            thickness=3
+        )
+
+        msg = CompressedImage()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "base_link"
+        msg.format = "jpeg"
+
+        success, encoded_img = cv2.imencode('.jpg', original_with_center)
+        if success:
+            msg.data = encoded_img.tobytes()
+            self.pub_drivable_area.publish(msg)
+
+        cv2.imshow("Original Camera View", original_with_center)
+        cv2.imshow("Final Path & Logs (on BEV)", bev_im_for_drawing)
+        cv2.imshow("Roboflow Detections (on BEV)", annotated_frame)
+        cv2.waitKey(1)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    parser = argparse.ArgumentParser()
+
+    package_share_directory = get_package_share_directory('yolotl_ros2')
+    default_weights = os.path.join(package_share_directory, 'config', 'weights3.pt')
+    default_params = os.path.join(package_share_directory, 'config', 'bev_params_ext.npz')
+    default_calib = os.path.join(package_share_directory, 'config', 'camera_calibration.pkl')
+
+    parser.add_argument('--weights', default=default_weights, help='Path to model weights')
+    parser.add_argument('--param-file', default=default_params, help='Path to BEV parameters file')
+    parser.add_argument('--calib-file', default=default_calib, help='Path to camera calibration pkl file')
+    parser.add_argument('--img-size', type=int, default=640)
+    parser.add_argument('--conf-thres', type=float, default=0.8)
+    parser.add_argument('--iou-thres', type=float, default=0.5)
+    parser.add_argument('--device', default='0')
+    parser.add_argument('--topic', type=str, default='/image_raw/compressed', help='ROS 2 Image Topic')
+
+    opt, _ = parser.parse_known_args()
+
+    node = LaneFollowerNode(opt)
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        cv2.destroyAllWindows()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
