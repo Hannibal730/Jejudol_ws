@@ -32,6 +32,12 @@ class MaRRTPurePursuit(Node):
         self.declare_parameter('lookahead_distance', 2.5)
         self.declare_parameter('max_steer_deg', 23.0)
         self.declare_parameter('use_arc_length_lookahead', True)
+        self.declare_parameter('use_throttle_based_lookahead', True)
+        self.declare_parameter('throttle_topic', '/auto_throttle')
+        self.declare_parameter('throttle_min', 0.4) # 단순히 동적ld 계산을 위해 구독하던 /auto_throttle을 클리핑. 이걸로 클리핑한 쓰로틀 내용을 실제 차량 쓰로틀 연산을 위해 발행하진 않음.
+        self.declare_parameter('throttle_max', 0.6) 
+        self.declare_parameter('lookahead_min_distance', 1.8)
+        self.declare_parameter('lookahead_max_distance', 3.5)
         # velodyne가 후륜축보다 +x(전방)으로 있을 때, 후륜축의 velodyne 기준 좌표는 음수 x
         self.declare_parameter('rear_axle_x_in_velodyne', -0.82)
         self.declare_parameter('rear_axle_y_in_velodyne', 0.0)
@@ -41,10 +47,22 @@ class MaRRTPurePursuit(Node):
         self.Ld = float(self.get_parameter('lookahead_distance').value)
         self.max_steer_deg = float(self.get_parameter('max_steer_deg').value)
         self.use_arc_length_lookahead = bool(self.get_parameter('use_arc_length_lookahead').value)
+        self.use_throttle_based_lookahead = bool(self.get_parameter('use_throttle_based_lookahead').value)
+        self.throttle_topic = str(self.get_parameter('throttle_topic').value)
+        self.throttle_min = float(self.get_parameter('throttle_min').value)
+        self.throttle_max = float(self.get_parameter('throttle_max').value)
+        self.lookahead_min_distance = float(self.get_parameter('lookahead_min_distance').value)
+        self.lookahead_max_distance = float(self.get_parameter('lookahead_max_distance').value)
         self.rear_axle_x_in_velodyne = float(self.get_parameter('rear_axle_x_in_velodyne').value)
         self.rear_axle_y_in_velodyne = float(self.get_parameter('rear_axle_y_in_velodyne').value)
         if self.max_steer_deg <= 0.0:
             self.max_steer_deg = 23.0
+        if self.throttle_max <= self.throttle_min:
+            self.throttle_max = self.throttle_min + 1e-3
+        if self.lookahead_max_distance < self.lookahead_min_distance:
+            self.lookahead_max_distance = self.lookahead_min_distance
+
+        self.current_throttle = self.throttle_min
 
         # 차량의 현재 위치 (velodyne 좌표계, 후륜축 중심)
         self.vehicle_x = self.rear_axle_x_in_velodyne
@@ -62,6 +80,7 @@ class MaRRTPurePursuit(Node):
         # 구독자
         self.waypoints_sub = self.create_subscription(WaypointsArray, '/waypoints', self.waypoints_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, '/odometry', self.odometry_callback, 10)
+        self.throttle_sub = self.create_subscription(Float32, self.throttle_topic, self.throttle_callback, 10)
 
         self.get_logger().info('MaRRT Pure Pursuit 노드가 초기화되었습니다. /waypoints와 /odometry를 구독합니다.')
 
@@ -73,6 +92,9 @@ class MaRRTPurePursuit(Node):
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         return math.atan2(siny_cosp, cosy_cosp)
+
+    def throttle_callback(self, msg):
+        self.current_throttle = float(np.clip(msg.data, self.throttle_min, self.throttle_max))
 
     def waypoints_callback(self, msg):
         # /waypoints 메시지에서 (x, y) 좌표 추출 (velodyne 좌표계)
@@ -162,8 +184,21 @@ class MaRRTPurePursuit(Node):
             y_rel = -math.sin(self.vehicle_yaw) * dx + math.cos(self.vehicle_yaw) * dy
             transformed_points.append((x_rel, y_rel))
 
-        # Lookahead distance (self.Ld 사용)
+        # Lookahead distance
         Ld = self.Ld
+        if self.use_throttle_based_lookahead:
+            v_norm = (self.current_throttle - self.throttle_min) / (
+                self.throttle_max - self.throttle_min + 1e-6
+            )
+            v_norm = float(np.clip(v_norm, 0.0, 1.0))
+            ld_target = self.lookahead_min_distance + (
+                self.lookahead_max_distance - self.lookahead_min_distance
+            ) * v_norm
+            Ld = float(np.clip(
+                ld_target,
+                self.lookahead_min_distance,
+                self.lookahead_max_distance
+            ))
 
         if self.use_arc_length_lookahead:
             # 현재 방식: 최근접 제어점부터 경로 arc length를 누적해 Ld 지점을 선택
