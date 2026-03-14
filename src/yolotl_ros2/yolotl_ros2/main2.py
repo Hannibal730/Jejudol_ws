@@ -184,8 +184,8 @@ class LaneFollowerNode(Node):
         self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4, 0.6
         self.current_throttle = self.THROTTLE_MIN
 
-        self.MIN_LOOKAHEAD_DISTANCE = 2.5
-        self.MAX_LOOKAHEAD_DISTANCE = 3.0
+        self.MIN_LOOKAHEAD_DISTANCE = 1.8
+        self.MAX_LOOKAHEAD_DISTANCE = 3.5
         self.MAX_STEER_DEG = 23.0
         self.prev_steer_deg = 0.0
 
@@ -264,7 +264,7 @@ class LaneFollowerNode(Node):
         M_inv = cv2.getPerspectiveTransform(self.bev_params['dst_points'], self.bev_params['src_points'])
         draw_img = image.copy()
 
-        LANE_WIDTH_M = 1.5
+        LANE_WIDTH_M = 1.8
         lane_width_pixels = LANE_WIDTH_M / self.m_per_pixel_x
 
         viz_left = left_coeff
@@ -671,7 +671,7 @@ def main(args=None):
     parser.add_argument('--param-file', default=default_params, help='Path to BEV parameters file')
     parser.add_argument('--calib-file', default=default_calib, help='Path to camera calibration pkl file')
     parser.add_argument('--img-size', type=int, default=640)
-    parser.add_argument('--conf-thres', type=float, default=0.5)
+    parser.add_argument('--conf-thres', type=float, default=0.8)
     parser.add_argument('--iou-thres', type=float, default=0.5)
     parser.add_argument('--device', default='0')
     parser.add_argument('--topic', type=str, default='/image_raw/compressed', help='ROS 2 Image Topic')

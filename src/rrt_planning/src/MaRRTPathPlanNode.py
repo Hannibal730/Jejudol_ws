@@ -38,8 +38,10 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('desiredWaypointsFrequency', 5.0)
         self.declare_parameter('sample_frequency', 20.0)
         self.declare_parameter('obstacle_topic', '/vn/lidar_cone')
-        self.declare_parameter('roi_end_topic', '/utm/f9r_roi_end_velodyne')
+        self.declare_parameter('roi_end_topic', '/gps/f9r_roi_end_velodyne')
         self.declare_parameter('rrt_target_visual_topic', '/rrt/rrt_target')
+        self.declare_parameter('use_roi_end_as_rrt_target', True)
+        self.declare_parameter('allow_cone_fallback_target', False)
 
         self.shouldPublishWaypoints = bool(self.get_parameter('publishWaypoints').value)
         self.shouldPublishPredefined = bool(self.get_parameter('publishPredefined').value)
@@ -50,6 +52,8 @@ class MaRRTPathPlanNode(Node):
         self.obstacle_topic = str(self.get_parameter('obstacle_topic').value)
         self.roi_end_topic = str(self.get_parameter('roi_end_topic').value)
         self.rrt_target_visual_topic = str(self.get_parameter('rrt_target_visual_topic').value)
+        self.use_roi_end_as_rrt_target = bool(self.get_parameter('use_roi_end_as_rrt_target').value)
+        self.allow_cone_fallback_target = bool(self.get_parameter('allow_cone_fallback_target').value)
 
         waypointsFrequency = float(self.get_parameter('desiredWaypointsFrequency').value)
         if waypointsFrequency <= 0.0:
@@ -123,7 +127,9 @@ class MaRRTPathPlanNode(Node):
         self.sample_timer = self.create_timer(1.0 / sample_frequency, self.sampleTree)
 
         self.get_logger().info(
-            f'Subscribed obstacle centers from {self.obstacle_topic}, ROI goal from {self.roi_end_topic}, running planner at {sample_frequency:.1f} Hz'
+            f'Subscribed obstacle centers from {self.obstacle_topic}, ROI goal from {self.roi_end_topic}, '
+            f'ROI-as-target={self.use_roi_end_as_rrt_target}, cone-fallback={self.allow_cone_fallback_target}, '
+            f'running planner at {sample_frequency:.1f} Hz'
         )
 
     def _now(self):
@@ -301,7 +307,7 @@ class MaRRTPathPlanNode(Node):
         rrtTarget = []
         targetRadius = 0.1  # 원하는 보수적인 rrt_target 반경 값
                 
-        roi_target = self.resolveRoiEndTarget()
+        roi_target = self.resolveRoiEndTarget() if self.use_roi_end_as_rrt_target else None
         if roi_target is not None:
             self.rrt_target = roi_target
             rrtTarget.append((roi_target.x, roi_target.y, targetRadius))
@@ -309,14 +315,10 @@ class MaRRTPathPlanNode(Node):
                 f'[RRT target] f9r_roi_end frame={self.world_frame} '
                 f'pos=({roi_target.x:.2f}, {roi_target.y:.2f})'
             )
-            
-            
-            
-        
-        # 수신 못 했다면 기존처럼 멀리 있는 콘들을 목표점으로 함    
-        else:
+
+        # ROI 목표를 사용할 수 없고 fallback 허용 시 멀리 있는 콘들을 목표점으로 사용
+        elif self.allow_cone_fallback_target:
             self.rrt_target = None
-            # self.rrt_target이 없는 경우, frontCones 리스트에서 조건에 맞는 콘을 선택
             fallback_found = False
             for cone in frontCones:
                 coneDist = self.dist(self.carPosX, self.carPosY, cone.x, cone.y)
@@ -334,6 +336,22 @@ class MaRRTPathPlanNode(Node):
                 self.get_logger().warn(
                     '[RRT target] source=NONE no ROI target and no fallback cone candidate (dist > 6m).'
                 )
+                self.publishRrtTargetVisual(None)
+                return
+
+        else:
+            self.rrt_target = None
+            self.publishRrtTargetVisual(None)
+            if self.use_roi_end_as_rrt_target:
+                self._warn_roi_throttle(
+                    f'[RRT target] ROI target unavailable on {self.roi_end_topic}; skipping planning '
+                    f'(allow_cone_fallback_target={self.allow_cone_fallback_target}).'
+                )
+            else:
+                self.get_logger().warn(
+                    '[RRT target] No target source enabled (ROI disabled and cone fallback disabled).'
+                )
+            return
 
         self.publishRrtTargetVisual(self.rrt_target)
 

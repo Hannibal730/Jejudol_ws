@@ -29,7 +29,7 @@ class MaRRTPurePursuit(Node):
         super().__init__('ma_rrt_purepursuit')
 
         self.declare_parameter('wheelbase', 0.724)
-        self.declare_parameter('lookahead_distance', 3.5)
+        self.declare_parameter('lookahead_distance', 2.5)
         self.declare_parameter('max_steer_deg', 23.0)
 
         # 파라미터

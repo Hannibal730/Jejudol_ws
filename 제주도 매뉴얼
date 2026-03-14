@@ -33,6 +33,7 @@ ros2 run gps_planning gps_purepursuit.py
 
 rv
 ros2 run voxelnext_ros2 lidar_cone_detect.py
+ros2 run dynamic_cone dynamic_cone
 
 ros2 run rrt_planning main.py
 ros2 run rrt_planning rrt_purepursuit.py

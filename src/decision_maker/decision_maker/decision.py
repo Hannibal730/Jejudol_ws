@@ -18,8 +18,8 @@ DEFAULTS = {
     'publish_rate_hz': 30.0,
     'log_rate_hz': 1.0,
     
-    'emergency_deceleration_sec': 1.5,
-    'emergency_off_delay_sec': 0.8,
+    'emergency_deceleration_sec': 1.0,
+    'emergency_off_delay_sec': 5.0,
     
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,

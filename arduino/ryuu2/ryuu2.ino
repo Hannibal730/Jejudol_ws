@@ -18,12 +18,12 @@
 #define POT_MIN 143
 #define MAX_STEER_TIRE_DEG 20
 
-#define KP 0.6
-#define KI 0.0
-#define KD 0.0
+#define KP 0.3
+#define KI 0.0005
+#define KD 0.004
 #define PID_DEADBAND 0.07
 // 조향 속도 미세 상향: 기존 실질 최대 50% -> 60%
-#define STEER_PWM_GAIN 0.60
+#define STEER_PWM_GAIN 0.80
 // 조향 각속도 로그용 저역통과필터(0~1, 클수록 반응 빠름)
 #define STEER_RATE_LPF_ALPHA 0.25
 
@@ -81,10 +81,10 @@ void Steer(double u) {
 
   if (u > 0) {
     digitalWrite(DIR3, HIGH);
-    analogWrite(PWM3, pwm_val);
+    analogWrite(PWM3, pwm_val*0.6);
   } else {
     digitalWrite(DIR3, LOW);
-    analogWrite(PWM3, pwm_val);
+    analogWrite(PWM3, pwm_val*0.6);
   }
 }
 
@@ -288,7 +288,7 @@ void MoveBackward(double throttle) {
 
 void CenterSteeringOnce() {
   const double CENTER_DEG = 0.0;      // 목표 센터 각도
-  const double TOL_DEG = 1.0;         // 허용 오차
+  const double TOL_DEG = 3;         // 허용 오차
   const unsigned long TIMEOUT_MS = 1200;
 
   unsigned long t0 = millis();
@@ -303,7 +303,8 @@ void CenterSteeringOnce() {
 
     // 너무 미세하면 멈춤
     if (fabs(err) <= TOL_DEG) {
-      Steer(0.0);
+      digitalWrite(DIR3, LOW);
+      analogWrite(PWM3, 0);;
       break;
     }
 
