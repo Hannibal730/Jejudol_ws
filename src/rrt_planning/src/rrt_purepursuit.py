@@ -31,17 +31,24 @@ class MaRRTPurePursuit(Node):
         self.declare_parameter('wheelbase', 0.724)
         self.declare_parameter('lookahead_distance', 2.5)
         self.declare_parameter('max_steer_deg', 23.0)
+        self.declare_parameter('use_arc_length_lookahead', True)
+        # velodyne가 후륜축보다 +x(전방)으로 있을 때, 후륜축의 velodyne 기준 좌표는 음수 x
+        self.declare_parameter('rear_axle_x_in_velodyne', -0.82)
+        self.declare_parameter('rear_axle_y_in_velodyne', 0.0)
 
         # 파라미터
         self.wheelbase = float(self.get_parameter('wheelbase').value)
         self.Ld = float(self.get_parameter('lookahead_distance').value)
         self.max_steer_deg = float(self.get_parameter('max_steer_deg').value)
+        self.use_arc_length_lookahead = bool(self.get_parameter('use_arc_length_lookahead').value)
+        self.rear_axle_x_in_velodyne = float(self.get_parameter('rear_axle_x_in_velodyne').value)
+        self.rear_axle_y_in_velodyne = float(self.get_parameter('rear_axle_y_in_velodyne').value)
         if self.max_steer_deg <= 0.0:
             self.max_steer_deg = 23.0
 
-        # 차량의 현재 위치 (velodyne 좌표계, 라이다/후륜축 중심)
-        self.vehicle_x = 0.0
-        self.vehicle_y = 0.0
+        # 차량의 현재 위치 (velodyne 좌표계, 후륜축 중심)
+        self.vehicle_x = self.rear_axle_x_in_velodyne
+        self.vehicle_y = self.rear_axle_y_in_velodyne
         self.vehicle_yaw = 0.0  # 라디안
 
         # B-spline 보간을 통해 생성된 등간격 제어점 (velodyne 좌표계, (x, y) 리스트)
@@ -132,9 +139,10 @@ class MaRRTPurePursuit(Node):
         self.do_pure_pursuit()
 
     def odometry_callback(self, msg):
-        # /odometry 메시지에서 차량의 현재 위치(라이다, 후륜축 중심) 업데이트
-        self.vehicle_x = 0.0
-        self.vehicle_y = 0.0
+        # /odometry 메시지에서 차량의 heading 업데이트
+        # 후륜축 기준점은 velodyne 기준 고정 오프셋을 사용
+        self.vehicle_x = self.rear_axle_x_in_velodyne
+        self.vehicle_y = self.rear_axle_y_in_velodyne
         q = msg.pose.pose.orientation
         self.vehicle_yaw = self._quaternion_to_yaw(q)
 
@@ -157,18 +165,46 @@ class MaRRTPurePursuit(Node):
         # Lookahead distance (self.Ld 사용)
         Ld = self.Ld
 
-        # 차량 앞쪽(x_rel > 0)에서 Ld에 가장 가까운 점 찾기
-        best_diff = float('inf')
-        lookahead_point = None
-        for pt in transformed_points:
-            x_rel, y_rel = pt
-            if x_rel < 0:
-                continue
-            dist = math.hypot(x_rel, y_rel)
-            diff = abs(dist - Ld)
-            if diff < best_diff:
-                best_diff = diff
-                lookahead_point = (x_rel, y_rel)
+        if self.use_arc_length_lookahead:
+            # 현재 방식: 최근접 제어점부터 경로 arc length를 누적해 Ld 지점을 선택
+            nearest_idx = 0
+            nearest_dist = float('inf')
+            for i, (x_rel, y_rel) in enumerate(transformed_points):
+                dist = math.hypot(x_rel, y_rel)
+                if dist < nearest_dist:
+                    nearest_dist = dist
+                    nearest_idx = i
+
+            lookahead_point = transformed_points[nearest_idx]
+            accum = 0.0
+            for i in range(nearest_idx, len(transformed_points) - 1):
+                x0, y0 = transformed_points[i]
+                x1, y1 = transformed_points[i + 1]
+                seg_len = math.hypot(x1 - x0, y1 - y0)
+                if seg_len <= 1e-6:
+                    continue
+
+                if accum + seg_len >= Ld:
+                    ratio = (Ld - accum) / seg_len
+                    lx = x0 + ratio * (x1 - x0)
+                    ly = y0 + ratio * (y1 - y0)
+                    lookahead_point = (lx, ly)
+                    break
+
+                accum += seg_len
+                lookahead_point = (x1, y1)
+        else:
+            # 기존 방식: 전방점(x_rel > 0) 중 |dist - Ld| 최소점을 선택
+            best_diff = float('inf')
+            lookahead_point = None
+            for x_rel, y_rel in transformed_points:
+                if x_rel < 0:
+                    continue
+                dist = math.hypot(x_rel, y_rel)
+                diff = abs(dist - Ld)
+                if diff < best_diff:
+                    best_diff = diff
+                    lookahead_point = (x_rel, y_rel)
 
         # 유효한 lookahead point가 없으면 정지
         if lookahead_point is None:
