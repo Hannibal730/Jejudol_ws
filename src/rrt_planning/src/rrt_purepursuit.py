@@ -104,7 +104,7 @@ class MaRRTPurePursuit(Node):
         total_length = arc_lengths[-1]
 
         # 등간격 제어점 추출
-        sampling_distance = 0.1
+        sampling_distance = 0.03
         desired_lengths = np.arange(0, total_length, sampling_distance)
         if desired_lengths.size == 0 or desired_lengths[-1] < total_length:
             desired_lengths = np.append(desired_lengths, total_length)
