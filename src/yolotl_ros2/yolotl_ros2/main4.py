@@ -145,31 +145,81 @@ def resample_polyline_by_y(xs, ys, y_min, y_max, y_step=1):
     return x_query.astype(np.float32), y_query.astype(np.float32)
 
 
-def compute_midpoints(left_xs, left_ys, right_xs, right_ys, y_step=1):
+def compute_fusion_centerline(left_xs, left_ys, right_xs, right_ys, offset_px, y_step=1):
     """
-    좌/우 차선을 같은 y축 기준으로 resampling 후 midpoint 계산
+    Y축(픽셀) 단위로 차선 존재 여부를 판별하여 융합(Fusion)합니다.
+    - 양차선이 존재하는 Y 구간: 두 차선의 평균(정중앙)
+    - 한쪽 차선만 존재하는 Y 구간: 해당 차선의 법선 오프셋 경로
     """
     if left_xs is None or right_xs is None:
         return None, None
 
-    y_min = int(max(np.min(left_ys), np.min(right_ys)))
-    y_max = int(min(np.max(left_ys), np.max(right_ys)))
-    if y_max - y_min < 2:
+    # 1. 원본 차선을 y_step 단위로 촘촘하게 보간
+    y_min_L, y_max_L = int(np.min(left_ys)), int(np.max(left_ys))
+    lx_dense, ly_dense = resample_polyline_by_y(left_xs, left_ys, y_min_L, y_max_L, y_step)
+
+    y_min_R, y_max_R = int(np.min(right_ys)), int(np.max(right_ys))
+    rx_dense, ry_dense = resample_polyline_by_y(right_xs, right_ys, y_min_R, y_max_R, y_step)
+
+    # 2. 각 차선의 법선 오프셋 경로를 구한 후 보간
+    lx_off, ly_off = offset_polyline_points(left_xs, left_ys, offset_px, direction=+1.0)
+    lx_off_dense, ly_off_dense = None, None
+    if lx_off is not None and len(lx_off) > 1:
+        lx_off_dense, ly_off_dense = resample_polyline_by_y(lx_off, ly_off, int(np.min(ly_off)), int(np.max(ly_off)), y_step)
+
+    rx_off, ry_off = offset_polyline_points(right_xs, right_ys, offset_px, direction=-1.0)
+    rx_off_dense, ry_off_dense = None, None
+    if rx_off is not None and len(rx_off) > 1:
+        rx_off_dense, ry_off_dense = resample_polyline_by_y(rx_off, ry_off, int(np.min(ry_off)), int(np.max(ry_off)), y_step)
+
+    # 3. Y좌표를 키(Key)로 하는 딕셔너리로 매핑하여 빠른 탐색 지원
+    dict_lx = dict(zip(ly_dense, lx_dense)) if ly_dense is not None else {}
+    dict_rx = dict(zip(ry_dense, rx_dense)) if ry_dense is not None else {}
+    dict_lx_off = dict(zip(ly_off_dense, lx_off_dense)) if ly_off_dense is not None else {}
+    dict_rx_off = dict(zip(ry_off_dense, rx_off_dense)) if ry_off_dense is not None else {}
+
+    # 4. 존재하는 전체 Y 범위 확인
+    all_y = set(dict_lx.keys()).union(set(dict_rx.keys()))
+    if not all_y:
         return None, None
 
-    lx, ly = resample_polyline_by_y(left_xs, left_ys, y_min, y_max, y_step=y_step)
-    rx, ry = resample_polyline_by_y(right_xs, right_ys, y_min, y_max, y_step=y_step)
+    min_y, max_y = int(min(all_y)), int(max(all_y))
 
-    if lx is None or rx is None:
+    merged_xs, merged_ys = [], []
+    # [핵심] 화면 전체가 아닌, Y축 높이별로 차선 개수를 판별
+    for y_val in range(min_y, max_y + 1, y_step):
+        y_f = float(y_val)
+        has_L = y_f in dict_lx
+        has_R = y_f in dict_rx
+
+        cx = None
+        if has_L and has_R:
+            # 양쪽 다 존재 -> 두 차선의 평균 (정중앙)
+            cx = (dict_lx[y_f] + dict_rx[y_f]) / 2.0
+        elif has_L and y_f in dict_lx_off:
+            # 왼쪽만 존재 -> 왼쪽 차선을 기반으로 한 법선 오프셋
+            cx = dict_lx_off[y_f]
+        elif has_R and y_f in dict_rx_off:
+            # 오른쪽만 존재 -> 오른쪽 차선을 기반으로 한 법선 오프셋
+            cx = dict_rx_off[y_f]
+
+        if cx is not None:
+            merged_xs.append(cx)
+            merged_ys.append(y_f)
+
+    if len(merged_xs) < 2:
         return None, None
 
-    common_n = min(len(lx), len(rx))
-    if common_n < 2:
-        return None, None
+    center_xs = np.array(merged_xs, dtype=np.float32)
+    center_ys = np.array(merged_ys, dtype=np.float32)
 
-    center_xs = (lx[:common_n] + rx[:common_n]) * 0.5
-    center_ys = ly[:common_n]
-    return center_xs.astype(np.float32), center_ys.astype(np.float32)
+    # 5. 연결 부위(단차선 <-> 양차선)의 꺾임을 스무딩 (이동 평균)
+    k_size = 15
+    if len(center_xs) >= k_size:
+        padded = np.pad(center_xs, (k_size//2, k_size//2), mode='edge')
+        center_xs = np.convolve(padded, np.ones(k_size)/k_size, mode='valid')
+
+    return center_xs, center_ys
 
 
 def offset_polyline_points(xs, ys, offset_px, direction=1.0):
@@ -557,32 +607,29 @@ class LaneFollowerNode(Node):
 
         # 6. Steering: 중앙 경로도 점 기반
         if lane_detected_bool:
-            LANE_WIDTH_M = 1.5
+            LANE_WIDTH_M = 1.7
             lane_width_pixels = LANE_WIDTH_M / self.m_per_pixel_x
 
             center_xs, center_ys = None, None
 
             if final_left_xs is not None and final_right_xs is not None:
-                center_xs, center_ys = compute_midpoints(
+                center_xs, center_ys = compute_fusion_centerline(
                     final_left_xs, final_left_ys,
                     final_right_xs, final_right_ys,
+                    offset_px=lane_width_pixels / 2.0,
                     y_step=1
                 )
 
             elif final_left_xs is not None:
                 center_xs, center_ys = offset_polyline_points(
-                    final_left_xs,
-                    final_left_ys,
-                    offset_px=lane_width_pixels / 2.0,
-                    direction=+1.0
+                    final_left_xs, final_left_ys,
+                    offset_px=lane_width_pixels / 2.0, direction=+1.0
                 )
 
             elif final_right_xs is not None:
                 center_xs, center_ys = offset_polyline_points(
-                    final_right_xs,
-                    final_right_ys,
-                    offset_px=lane_width_pixels / 2.0,
-                    direction=-1.0
+                    final_right_xs, final_right_ys,
+                    offset_px=lane_width_pixels / 2.0, direction=-1.0
                 )
 
             if center_xs is not None and len(center_xs) > 1:
@@ -687,8 +734,8 @@ class LaneFollowerNode(Node):
         )
 
         # 점 시각화
-        overlay_points(bev_im_for_drawing, left_fit_xs, left_fit_ys, color=(0, 0, 255), radius=2)
-        overlay_points(bev_im_for_drawing, right_fit_xs, right_fit_ys, color=(255, 0, 0), radius=2)
+        overlay_points(bev_im_for_drawing, left_fit_xs, left_fit_ys, color=(255, 0, 0), radius=2)
+        overlay_points(bev_im_for_drawing, right_fit_xs, right_fit_ys, color=(0, 0, 255), radius=2)
         overlay_points(bev_im_for_drawing, center_fit_xs, center_fit_ys, color=(255, 255, 255), radius=2)
 
         if goal_point_bev is not None:

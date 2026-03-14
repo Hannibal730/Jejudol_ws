@@ -30,6 +30,8 @@ setup(
             'main2 = yolotl_ros2.main2:main',
              # 1. 메인 자율주행 노드 (main.py)
             'main3= yolotl_ros2.main3:main',
+             # 1. 메인 자율주행 노드 (main.py)
+            'main4= yolotl_ros2.main4:main',
             
             # 2. 로컬 테스트 노드 (demo.py)
             'local_demo = yolotl_ros2.demo:main',

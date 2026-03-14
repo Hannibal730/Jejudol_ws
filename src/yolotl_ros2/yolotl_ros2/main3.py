@@ -94,17 +94,45 @@ def overlay_polyline(image, coeff, color=(0, 0, 255), step=4, thickness=2):
     return image
 
 
+def extract_centerline_points_from_component(component_mask, min_points_per_y=1, y_step=1):
+    """
+    하나의 connected component(binary mask)에서
+    각 y마다 x의 중심점(mean)을 구해 centerline points를 만든다.
+    """
+    h, w = component_mask.shape
+    ys_center = []
+    xs_center = []
+
+    for y in range(0, h, y_step):
+        xs = np.where(component_mask[y] > 0)[0]
+        if len(xs) >= min_points_per_y:
+            x_center = float(np.mean(xs))
+            ys_center.append(float(y))
+            xs_center.append(x_center)
+
+    if len(ys_center) == 0:
+        return None, None
+
+    return np.array(ys_center, dtype=np.float32), np.array(xs_center, dtype=np.float32)
+
+
 def offset_points_along_normal(coeff, ys, offset_px):
-    # x = f(y) 곡선에서 각 점의 법선 방향으로 offset_px 만큼 이동
+    """
+    [수정됨] 법선 이동 시 Y좌표가 역전되는 현상(Cusp)을 방지하기 위해,
+    Y좌표는 고정하고 X축 방향으로만 secant 배율을 곱해 이동시킵니다.
+    """
     ys = np.asarray(ys, dtype=np.float32)
     xs = np.polyval(coeff, ys)
 
     dcoeff = np.polyder(coeff)
     dx_dy = np.polyval(dcoeff, ys)
-    denom = np.sqrt(1.0 + np.square(dx_dy)) + 1e-6
+    dx_dy = np.clip(dx_dy, -5.0, 5.0)
 
-    x_off = xs + (offset_px / denom)
-    y_off = ys - (offset_px * dx_dy / denom)
+    delta_x = offset_px * np.sqrt(1.0 + np.square(dx_dy))
+
+    x_off = xs + delta_x
+    y_off = ys
+
     return x_off, y_off
 
 
@@ -162,19 +190,24 @@ class LaneFollowerNode(Node):
             self.use_undistort = False
 
         # 3. 주행 파라미터
-        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0017 , 1.85, 0.0026
+        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0034, 1.25, 0.0037
         self.tracked_lanes = {'left': {'coeff': None, 'age': 0}, 'right': {'coeff': None, 'age': 0}}
         self.tracked_center_path = {'coeff': None}
-        self.SMOOTHING_ALPHA = 0.6
-        self.MAX_LANE_AGE = 90    # 30 Hz 기준으로 1프레임은 약 0.033초 (즉, 30프레임이 1초)
-        self.L = 0.73  # 후륜축-전륜축 중심간 거리
+        self.SMOOTHING_ALPHA = 0.4
+        self.MAX_LANE_AGE = 7
+        self.L = 0.73
 
         self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4, 0.6
         self.current_throttle = self.THROTTLE_MIN
 
-        self.MIN_LOOKAHEAD_DISTANCE = 2.5
-        self.MAX_LOOKAHEAD_DISTANCE = 3.0
+        self.MIN_LOOKAHEAD_DISTANCE = 1.8
+        self.MAX_LOOKAHEAD_DISTANCE = 3.5
         self.MAX_STEER_DEG = 23.0
+        self.prev_steer_deg = 0.0
+
+        self.MAX_STEER_RATE = 12.0
+
+        self.last_valid_ld = float(self.MAX_LOOKAHEAD_DISTANCE)
 
         # 4. ROS Setup
         self.pub_steering = self.create_publisher(Float32, 'auto_steer_angle_yolotl', 1)
@@ -231,7 +264,6 @@ class LaneFollowerNode(Node):
             new_camera_matrix
         )
 
-        # ROI crop 후 원래 크기로 다시 맞춤
         x, y, rw, rh = roi
         if rw > 0 and rh > 0:
             undistorted = undistorted[y:y + rh, x:x + rw]
@@ -247,7 +279,7 @@ class LaneFollowerNode(Node):
         M_inv = cv2.getPerspectiveTransform(self.bev_params['dst_points'], self.bev_params['src_points'])
         draw_img = image.copy()
 
-        LANE_WIDTH_M = 1.5
+        LANE_WIDTH_M = 1.8
         lane_width_pixels = LANE_WIDTH_M / self.m_per_pixel_x
 
         viz_left = left_coeff
@@ -322,7 +354,6 @@ class LaneFollowerNode(Node):
             self.get_logger().error(f"Decode Error: {e}")
 
     def process_image(self, im0s):
-        # ✅ 왜곡 보정 먼저
         im0s = self.undistort_image(im0s)
 
         steer_deg = None
@@ -331,21 +362,7 @@ class LaneFollowerNode(Node):
         final_right_coeff = None
         lane_detected_bool = False
 
-        throttle_range = self.THROTTLE_MAX - self.THROTTLE_MIN
-        if throttle_range <= 0:
-            normalized_throttle = 0.0
-        else:
-            normalized_throttle = (self.current_throttle - self.THROTTLE_MIN) / throttle_range
-        dynamic_lookahead_distance = self.MIN_LOOKAHEAD_DISTANCE + (
-            self.MAX_LOOKAHEAD_DISTANCE - self.MIN_LOOKAHEAD_DISTANCE
-        ) * normalized_throttle
-        dynamic_lookahead_distance = float(np.clip(
-            dynamic_lookahead_distance,
-            self.MIN_LOOKAHEAD_DISTANCE,
-            self.MAX_LOOKAHEAD_DISTANCE
-        ))
-        self.pub_lookahead.publish(Float32(data=dynamic_lookahead_distance))
-
+        dynamic_lookahead_distance = self.last_valid_ld
         annotated_frame = im0s.copy()
 
         # 1. BEV Transform
@@ -376,17 +393,34 @@ class LaneFollowerNode(Node):
         final_mask = final_filter(combined_mask_bev)
         bev_im_for_drawing = bev_image_input.copy()
 
-        # 4. Lane Extraction
+        # 4. Lane Extraction 
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(final_mask, connectivity=8)
         current_detections = []
         if num_labels > 1:
             for i in range(1, num_labels):
                 if stats[i, cv2.CC_STAT_AREA] >= 100:
-                    ys, xs = np.where(labels == i)
-                    coeff = polyfit_lane(ys, xs, order=2)
+                    component_mask = np.zeros_like(final_mask, dtype=np.uint8)
+                    component_mask[labels == i] = 255
+
+                    ys_center, xs_center = extract_centerline_points_from_component(
+                        component_mask,
+                        min_points_per_y=1,
+                        y_step=1
+                    )
+
+                    if ys_center is None or len(ys_center) < 5:
+                        continue
+
+                    coeff = polyfit_lane(ys_center, xs_center, order=2)
                     if coeff is not None:
                         x_at_bottom = np.polyval(coeff, self.bev_h - 1)
-                        current_detections.append({'coeff': coeff, 'x_bottom': x_at_bottom})
+                        current_detections.append({
+                            'coeff': coeff,
+                            'x_bottom': x_at_bottom,
+                            'ys_center': ys_center,
+                            'xs_center': xs_center
+                        })
+
         current_detections.sort(key=lambda c: c['x_bottom'])
 
         # 5. Tracking
@@ -446,6 +480,7 @@ class LaneFollowerNode(Node):
         # 6. Steering
         if lane_detected_bool:
             center_points = []
+            target_center_lane_coeff = None
             LANE_WIDTH_M = 1.5
             lane_width_pixels = LANE_WIDTH_M / self.m_per_pixel_x
 
@@ -456,27 +491,36 @@ class LaneFollowerNode(Node):
                     x_center = (np.polyval(final_left_coeff, y) + np.polyval(final_right_coeff, y)) / 2.0
                     center_points.append([float(x_center), float(y)])
             elif final_left_coeff is not None:
-                # 좌차선만 있을 때는 우측(차로 중심) 법선 방향으로 half lane width 오프셋
                 x_centers, y_centers = offset_points_along_normal(
                     final_left_coeff,
                     ys_samples,
                     lane_width_pixels / 2.0
                 )
                 for x_center, y_center in zip(x_centers, y_centers):
-                    if 0 <= x_center < self.bev_w and 0 <= y_center < self.bev_h:
-                        center_points.append([float(x_center), float(y_center)])
+                    if not (0 <= x_center < self.bev_w and 0 <= y_center < self.bev_h):
+                        continue
+
+                    lane_x_same_height = np.polyval(final_left_coeff, y_center)
+                    if x_center <= lane_x_same_height:
+                        continue
+
+                    center_points.append([float(x_center), float(y_center)])
             elif final_right_coeff is not None:
-                # 우차선만 있을 때는 좌측(차로 중심) 법선 방향으로 half lane width 오프셋
                 x_centers, y_centers = offset_points_along_normal(
                     final_right_coeff,
                     ys_samples,
                     -lane_width_pixels / 2.0
                 )
                 for x_center, y_center in zip(x_centers, y_centers):
-                    if 0 <= x_center < self.bev_w and 0 <= y_center < self.bev_h:
-                        center_points.append([float(x_center), float(y_center)])
+                    if not (0 <= x_center < self.bev_w and 0 <= y_center < self.bev_h):
+                        continue
 
-            target_center_lane_coeff = None
+                    lane_x_same_height = np.polyval(final_right_coeff, y_center)
+                    if x_center >= lane_x_same_height:
+                        continue
+
+                    center_points.append([float(x_center), float(y_center)])
+
             if len(center_points) > 10:
                 center_points_np = np.array(center_points, dtype=np.float32)
                 center_points_np = center_points_np[np.argsort(center_points_np[:, 1])]
@@ -498,7 +542,6 @@ class LaneFollowerNode(Node):
             if self.tracked_center_path['coeff'] is not None:
                 final_center_coeff = self.tracked_center_path['coeff']
 
-                # Path Publishing
                 path_msg = Path()
                 path_msg.header.frame_id = "base_link"
                 path_msg.header.stamp = self.get_clock().now().to_msg()
@@ -517,6 +560,24 @@ class LaneFollowerNode(Node):
 
                 self.pub_path.publish(path_msg)
 
+                v_norm = (self.current_throttle - self.THROTTLE_MIN) / (
+                    self.THROTTLE_MAX - self.THROTTLE_MIN + 1e-6
+                )
+                v_norm = np.clip(v_norm, 0.0, 1.0)
+
+                LD_target = self.MIN_LOOKAHEAD_DISTANCE + (
+                    self.MAX_LOOKAHEAD_DISTANCE - self.MIN_LOOKAHEAD_DISTANCE
+                ) * v_norm
+
+                dynamic_lookahead_distance = float(np.clip(
+                    LD_target,
+                    self.MIN_LOOKAHEAD_DISTANCE,
+                    self.MAX_LOOKAHEAD_DISTANCE
+                ))
+
+                self.last_valid_ld = dynamic_lookahead_distance
+                self.pub_lookahead.publish(Float32(data=dynamic_lookahead_distance))
+
                 for y_bev in range(self.bev_h - 1, -1, -1):
                     x_bev = np.polyval(final_center_coeff, y_bev)
                     x_veh, y_veh_right = self.image_to_vehicle((x_bev, y_bev))
@@ -525,13 +586,29 @@ class LaneFollowerNode(Node):
                     if dist >= dynamic_lookahead_distance:
                         goal_point_bev = (int(x_bev), int(y_bev))
                         steer_rad = atan2(2.0 * self.L * y_veh_right, x_veh ** 2 + y_veh_right ** 2)
-                        steer_deg = float(np.clip(
+
+                        raw_steer_deg = float(np.clip(
                             -degrees(steer_rad),
                             -self.MAX_STEER_DEG,
                             self.MAX_STEER_DEG
                         ))
+
+                        delta = np.clip(
+                            raw_steer_deg - self.prev_steer_deg,
+                            -self.MAX_STEER_RATE,
+                            self.MAX_STEER_RATE
+                        )
+                        steer_deg = float(self.prev_steer_deg + delta)
+
+                        self.prev_steer_deg = steer_deg
                         self.pub_steering.publish(Float32(data=steer_deg))
                         break
+            else:
+                dynamic_lookahead_distance = float(self.last_valid_ld)
+                self.pub_lookahead.publish(Float32(data=float(self.last_valid_ld)))
+        else:
+            dynamic_lookahead_distance = float(self.last_valid_ld)
+            self.pub_lookahead.publish(Float32(data=float(self.last_valid_ld)))
 
         # 7. Visualization
         try:
@@ -613,14 +690,14 @@ def main(args=None):
 
     package_share_directory = get_package_share_directory('yolotl_ros2')
     default_weights = os.path.join(package_share_directory, 'config', 'weights3.pt')
-    default_params = os.path.join(package_share_directory, 'config', 'bev_params_0312.npz')
+    default_params = os.path.join(package_share_directory, 'config', 'bev_params_ext.npz')
     default_calib = os.path.join(package_share_directory, 'config', 'camera_calibration.pkl')
 
     parser.add_argument('--weights', default=default_weights, help='Path to model weights')
     parser.add_argument('--param-file', default=default_params, help='Path to BEV parameters file')
     parser.add_argument('--calib-file', default=default_calib, help='Path to camera calibration pkl file')
     parser.add_argument('--img-size', type=int, default=640)
-    parser.add_argument('--conf-thres', type=float, default=0.5)
+    parser.add_argument('--conf-thres', type=float, default=0.8)
     parser.add_argument('--iou-thres', type=float, default=0.5)
     parser.add_argument('--device', default='0')
     parser.add_argument('--topic', type=str, default='/image_raw/compressed', help='ROS 2 Image Topic')
