@@ -2,6 +2,8 @@
 
 ros2 run yolotl_ros2 lane_follower
 
+ros2 run yolotl_ros2 main5 
+#최신 메인
 
 백파일 input
 ros2 bag play ~/Downloads/test13 -l
