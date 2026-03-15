@@ -294,7 +294,7 @@ private:
     m.color.a = 1.0f;
     m.color.r = 1.0f;
     m.color.g = 0.1f;
-    m.color.b = 0.1f;
+    m.color.b = 1.0f;
     m.pose.orientation.w = 1.0;
     m.pose.position.x = csv_pts[idx].x;
     m.pose.position.y = csv_pts[idx].y;
