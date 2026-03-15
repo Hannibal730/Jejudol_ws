@@ -18,8 +18,11 @@ DEFAULTS = {
     'publish_rate_hz': 30.0,
     'log_rate_hz': 1.0,
     
-    'emergency_deceleration_sec': 1.0,
+    'emergency_deceleration_sec': 2.0,
     'emergency_recovery_delay_sec': 2.0,
+    'decelerate_to_gps_sec': 1.5,
+    'decelerate_to_yolotl_sec': 1.5,
+    'decelerate_to_rrt_sec': 1.5,
     
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,
@@ -35,16 +38,16 @@ DEFAULTS = {
     
     'auto_throttle_moon_course': 0.15,
     
-    'auto_throttle_yolotl_max': 0.5,
-    'auto_throttle_yolotl_min': 0.2,
+    'auto_throttle_yolotl_max': 1.0,
+    'auto_throttle_yolotl_min': 0.4,
     
-    'auto_throttle_rrt_max': 0.3,
+    'auto_throttle_rrt_max': 0.8,
     'auto_throttle_rrt_min': 0.2,
     
     'auto_throttle_gps': 0.2,
-    'auto_throttle_static_obstacle': 0.4,
+    'auto_throttle_static_obstacle': 0.3,
 
-    'num_static_obstacle_threshold': 4,
+    'num_static_obstacle_threshold': 5,
     
     'mannual_deceleration_sec': 2.5,
     'manual_stop_use_spacebar': True,
@@ -73,9 +76,12 @@ MISSION_RRT = 'rrt'
 # - emergency       : steer=yolotl, throttle은 현재값에서 emergency_deceleration_sec 동안 0.0으로 선형 감속
 # - moon_course     : steer=rrt_caution, throttle=auto_throttle_moon_course(고정)
 # - lane            : steer=yolotl, throttle=[yolotl_min, yolotl_max] 역비례 매핑
+#                     (lane로 전환 시 현재 throttle이 더 크면 decelerate_to_yolotl_sec 동안 선형 감속)
 # - gps             : steer=gps, throttle=auto_throttle_gps(고정)
+#                     (gps로 전환 시 현재 throttle이 더 크면 decelerate_to_gps_sec 동안 선형 감속)
 # - static_obstacle : steer=rrt_caution, throttle=auto_throttle_static_obstacle(고정)
 # - rrt             : steer=rrt, throttle=[rrt_min, rrt_max] 역비례 매핑
+#                     (rrt로 전환 시 현재 throttle이 더 크면 decelerate_to_rrt_sec 동안 선형 감속)
 # 5)   throttle 매핑 경로(2-b의 yolotl, 4단계의 rrt)에서는 매핑 전에 steer에 auto_steer_angle_abs_max 안전장치를 먼저 적용
 # 공통 안전장치: |auto_steer_angle| < auto_steer_angle_abs_max, 0<=auto_throttle<=auto_throttle_max
 class DecisionNode(Node):
@@ -90,6 +96,9 @@ class DecisionNode(Node):
         self.log_rate_hz = float(self.get_parameter('log_rate_hz').value)
         self.emergency_deceleration_sec = float(self.get_parameter('emergency_deceleration_sec').value)
         self.emergency_recovery_delay_sec = float(self.get_parameter('emergency_recovery_delay_sec').value)
+        self.decelerate_to_gps_sec = float(self.get_parameter('decelerate_to_gps_sec').value)
+        self.decelerate_to_yolotl_sec = float(self.get_parameter('decelerate_to_yolotl_sec').value)
+        self.decelerate_to_rrt_sec = float(self.get_parameter('decelerate_to_rrt_sec').value)
         self.auto_steer_angle_abs_max = float(self.get_parameter('auto_steer_angle_abs_max').value)
         self.auto_throttle_max = float(self.get_parameter('auto_throttle_max').value)
         self.auto_throttle_moon_course = float(self.get_parameter('auto_throttle_moon_course').value)
@@ -111,6 +120,12 @@ class DecisionNode(Node):
             self.emergency_deceleration_sec = DEFAULTS['emergency_deceleration_sec']
         if self.emergency_recovery_delay_sec < 0.0:
             self.emergency_recovery_delay_sec = DEFAULTS['emergency_recovery_delay_sec']
+        if self.decelerate_to_gps_sec <= 0.0:
+            self.decelerate_to_gps_sec = DEFAULTS['decelerate_to_gps_sec']
+        if self.decelerate_to_yolotl_sec <= 0.0:
+            self.decelerate_to_yolotl_sec = DEFAULTS['decelerate_to_yolotl_sec']
+        if self.decelerate_to_rrt_sec <= 0.0:
+            self.decelerate_to_rrt_sec = DEFAULTS['decelerate_to_rrt_sec']
         if self.log_rate_hz < 0.0:
             self.log_rate_hz = DEFAULTS['log_rate_hz']
         if self.auto_steer_angle_abs_max <= 0.0:
@@ -140,6 +155,12 @@ class DecisionNode(Node):
         self.decel_active = False
         self.decel_start_time = 0.0
         self.decel_start_throttle = 0.0
+        self.transition_decel_active = False
+        self.transition_decel_target_state = ''
+        self.transition_decel_start_time = 0.0
+        self.transition_decel_duration_sec = 0.0
+        self.transition_decel_start_throttle = 0.0
+        self.transition_decel_target_throttle = 0.0
         self._next_log_time = 0.0
         self.spacebar_stop_active = False
         self.spacebar_stop_start_time = 0.0
@@ -172,10 +193,14 @@ class DecisionNode(Node):
 
         self.get_logger().info(
             'decision_node started: publish_rate=%.1fHz emergency_deceleration_sec=%.2fs '
+            'decelerate_to_gps_sec=%.2fs decelerate_to_yolotl_sec=%.2fs decelerate_to_rrt_sec=%.2fs '
             'mannual_deceleration_sec=%.2fs auto_steer_angle_abs_max=%.2f auto_throttle_max=%.2f'
             % (
                 self.publish_rate_hz,
                 self.emergency_deceleration_sec,
+                self.decelerate_to_gps_sec,
+                self.decelerate_to_yolotl_sec,
+                self.decelerate_to_rrt_sec,
                 self.mannual_deceleration_sec,
                 self.auto_steer_angle_abs_max,
                 self.auto_throttle_max,
@@ -226,6 +251,43 @@ class DecisionNode(Node):
         elapsed = now_sec - self.decel_start_time
         progress = self._clamp(elapsed / self.emergency_deceleration_sec, 0.0, 1.0)
         return self.decel_start_throttle * (1.0 - progress)
+
+    def _cancel_transition_deceleration(self):
+        self.transition_decel_active = False
+        self.transition_decel_target_state = ''
+
+    def _start_transition_deceleration(
+        self,
+        now_sec: float,
+        target_state: str,
+        target_throttle: float,
+        duration_sec: float,
+    ):
+        self.transition_decel_active = True
+        self.transition_decel_target_state = target_state
+        self.transition_decel_start_time = now_sec
+        self.transition_decel_duration_sec = max(duration_sec, 1e-6)
+        self.transition_decel_start_throttle = max(0.0, self.current_auto_throttle)
+        self.transition_decel_target_throttle = max(0.0, target_throttle)
+        self.get_logger().info(
+            '[TRANSITION-DECEL] %s: /auto_throttle %.3f -> %.3f in %.2fs'
+            % (
+                target_state,
+                self.transition_decel_start_throttle,
+                self.transition_decel_target_throttle,
+                self.transition_decel_duration_sec,
+            )
+        )
+
+    def _compute_transition_deceleration_throttle(self, now_sec: float) -> float:
+        elapsed = now_sec - self.transition_decel_start_time
+        progress = self._clamp(elapsed / self.transition_decel_duration_sec, 0.0, 1.0)
+        throttle = self.transition_decel_start_throttle + (
+            (self.transition_decel_target_throttle - self.transition_decel_start_throttle) * progress
+        )
+        if progress >= 1.0:
+            self._cancel_transition_deceleration()
+        return throttle
 
     def _consume_spacebar_request(self) -> bool:
         with self._spacebar_pending_lock:
@@ -397,45 +459,93 @@ class DecisionNode(Node):
 
         self.emergency_active = self.emergency_raw
         state = self._get_mission_state()
+        prev_state = self.current_mission_state
 
         # emergency 상태에서 다른 상태로 방금 전환되었는지 확인하여 이탈 시간 기록
-        if self.current_mission_state == MISSION_EMERGENCY and state != MISSION_EMERGENCY:
+        if prev_state == MISSION_EMERGENCY and state != MISSION_EMERGENCY:
             self.emergency_exit_time = now_sec
 
         self.current_mission_state = state
 
+        if self.transition_decel_active and state != self.transition_decel_target_state:
+            self._cancel_transition_deceleration()
+
         if state == MISSION_EMERGENCY:
+            self._cancel_transition_deceleration()
             steer_cmd = self._clamp_steer(self.auto_steer_angle_yolotl)
             throttle_cmd = self._compute_emergency_throttle(now_sec)
         elif state == MISSION_MOON_COURSE:
             self.decel_active = False
+            self._cancel_transition_deceleration()
             steer_cmd = self._clamp_steer(self.auto_steer_angle_rrt_caution)
             throttle_cmd = self.auto_throttle_moon_course
         elif state == MISSION_LANE:
             self.decel_active = False
             steer_cmd = self._clamp_steer(self.auto_steer_angle_yolotl)
-            throttle_cmd = self._map_throttle_inverse_by_steer(
+            lane_target_throttle = self._map_throttle_inverse_by_steer(
                 steer_cmd,
                 self.auto_throttle_yolotl_max,
                 self.auto_throttle_yolotl_min,
             )
+            if prev_state != MISSION_LANE:
+                if self.current_auto_throttle > lane_target_throttle:
+                    self._start_transition_deceleration(
+                        now_sec=now_sec,
+                        target_state=MISSION_LANE,
+                        target_throttle=lane_target_throttle,
+                        duration_sec=self.decelerate_to_yolotl_sec,
+                    )
+                else:
+                    self._cancel_transition_deceleration()
+            if self.transition_decel_active and self.transition_decel_target_state == MISSION_LANE:
+                throttle_cmd = self._compute_transition_deceleration_throttle(now_sec)
+            else:
+                throttle_cmd = lane_target_throttle
         elif state == MISSION_GPS:
             self.decel_active = False
             steer_cmd = self._clamp_steer(self.auto_steer_angle_gps)
-            throttle_cmd = self.auto_throttle_gps
+            if prev_state != MISSION_GPS:
+                if self.current_auto_throttle > self.auto_throttle_gps:
+                    self._start_transition_deceleration(
+                        now_sec=now_sec,
+                        target_state=MISSION_GPS,
+                        target_throttle=self.auto_throttle_gps,
+                        duration_sec=self.decelerate_to_gps_sec,
+                    )
+                else:
+                    self._cancel_transition_deceleration()
+            if self.transition_decel_active and self.transition_decel_target_state == MISSION_GPS:
+                throttle_cmd = self._compute_transition_deceleration_throttle(now_sec)
+            else:
+                throttle_cmd = self.auto_throttle_gps
         elif state == MISSION_STATIC_OBSTACLE:
             self.decel_active = False
+            self._cancel_transition_deceleration()
             steer_cmd = self._clamp_steer(self.auto_steer_angle_rrt_caution)
             throttle_cmd = self.auto_throttle_static_obstacle
         else:
             # MISSION_RRT
             self.decel_active = False
             steer_cmd = self._clamp_steer(self.auto_steer_angle_rrt)
-            throttle_cmd = self._map_throttle_inverse_by_steer(
+            rrt_target_throttle = self._map_throttle_inverse_by_steer(
                 steer_cmd,
                 self.auto_throttle_rrt_max,
                 self.auto_throttle_rrt_min,
             )
+            if prev_state != MISSION_RRT:
+                if self.current_auto_throttle > rrt_target_throttle:
+                    self._start_transition_deceleration(
+                        now_sec=now_sec,
+                        target_state=MISSION_RRT,
+                        target_throttle=rrt_target_throttle,
+                        duration_sec=self.decelerate_to_rrt_sec,
+                    )
+                else:
+                    self._cancel_transition_deceleration()
+            if self.transition_decel_active and self.transition_decel_target_state == MISSION_RRT:
+                throttle_cmd = self._compute_transition_deceleration_throttle(now_sec)
+            else:
+                throttle_cmd = rrt_target_throttle
 
         # 모든 state에서 publish 직전 최종 steer 안전장치 재적용
         steer_cmd = self._clamp_steer(steer_cmd)
