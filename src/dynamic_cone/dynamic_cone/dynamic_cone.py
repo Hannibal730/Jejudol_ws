@@ -26,7 +26,7 @@ class ConeDetectionNode(Node):
         self.declare_parameter('topic', '/image_raw/compressed')
         self.declare_parameter('conf', 0.3)
         self.declare_parameter('device', '')
-        self.declare_parameter('bev_params', 'bev_params_0307.npz')
+        self.declare_parameter('bev_params', 'bev_params_ext.npz')
         self.declare_parameter('obstacle_threshold', 0.1)
 
         # 파라미터 값 읽기
@@ -223,24 +223,6 @@ class ConeDetectionNode(Node):
                 cv2.putText(annotated_frame, "EMERGENCY", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
                 is_emergency = True
             self.pub_emergency.publish(Bool(data=is_emergency))
-
-            # Lane Path 오버레이
-            if self.latest_path is not None and self.M_inv is not None:
-                path_points_bev = []
-                for pose in self.latest_path.poses:
-                    x_veh = pose.pose.position.x
-                    y_veh = pose.pose.position.y
-                    
-                    # Vehicle(m) -> BEV(pixel) 변환
-                    v = self.bev_h - (x_veh - self.y_offset_m) / self.m_per_pixel_y
-                    u = self.bev_w / 2 - y_veh / self.m_per_pixel_x
-                    path_points_bev.append([u, v])
-                
-                if path_points_bev:
-                    # BEV(pixel) -> Original(pixel) 역변환
-                    pts_bev = np.array([path_points_bev], dtype=np.float32) # (1, N, 2)
-                    pts_orig = cv2.perspectiveTransform(pts_bev, self.M_inv)
-                    cv2.polylines(annotated_frame, [np.int32(pts_orig)], False, (0, 255, 0), 3)
 
             # [Publish] 결과 이미지 발행 (CompressedImage)
             msg_pub = CompressedImage()

@@ -467,19 +467,52 @@ class LaneFollowerNode(Node):
             image, M, (self.bev_w, self.bev_h), flags=cv2.INTER_LINEAR
         )
 
-    def draw_path_on_original(self, image, xs, ys, color=(0, 255, 0), thickness=3):
-        if xs is None or ys is None or len(xs) < 2:
-            return image
-
+    def draw_drivable_area_on_original(self, image, left_xs, left_ys, right_xs, right_ys, center_xs, center_ys):
         M_inv = cv2.getPerspectiveTransform(
             self.bev_params['dst_points'],
             self.bev_params['src_points']
         )
-
-        pts_bev = np.array([np.stack([xs, ys], axis=1)], dtype=np.float32)
-        pts_orig = cv2.perspectiveTransform(pts_bev, M_inv)
         draw_img = image.copy()
-        cv2.polylines(draw_img, [np.int32(pts_orig)[0]], False, color, thickness)
+
+        LANE_WIDTH_M = 1.7
+        lane_width_pixels = LANE_WIDTH_M / self.m_per_pixel_x
+
+        viz_left_xs, viz_left_ys = left_xs, left_ys
+        viz_right_xs, viz_right_ys = right_xs, right_ys
+
+        if viz_left_xs is not None and viz_right_xs is None:
+            r_xs, r_ys = offset_polyline_points(viz_left_xs, viz_left_ys, lane_width_pixels, direction=+1.0)
+            if r_xs is not None:
+                viz_right_xs, viz_right_ys = r_xs, r_ys
+        elif viz_right_xs is not None and viz_left_xs is None:
+            l_xs, l_ys = offset_polyline_points(viz_right_xs, viz_right_ys, lane_width_pixels, direction=-1.0)
+            if l_xs is not None:
+                viz_left_xs, viz_left_ys = l_xs, l_ys
+
+        if viz_left_xs is not None and viz_right_xs is not None and len(viz_left_xs) > 1 and len(viz_right_xs) > 1:
+            pts_left = np.stack([viz_left_xs, viz_left_ys], axis=1)
+            pts_right = np.stack([viz_right_xs, viz_right_ys], axis=1)
+            
+            pts_bev = np.vstack([pts_left, pts_right[::-1]])
+            pts_bev = np.array([pts_bev], dtype=np.float32)
+            
+            pts_orig = cv2.perspectiveTransform(pts_bev, M_inv)
+            
+            overlay = draw_img.copy()
+            cv2.fillPoly(overlay, [np.int32(pts_orig)], (0, 255, 0))
+            cv2.addWeighted(overlay, 0.3, draw_img, 0.7, 0, draw_img)
+
+        def transform_and_draw(xs, ys, color, thickness=3):
+            if xs is None or ys is None or len(xs) < 2:
+                return
+            pts_bev = np.array([np.stack([xs, ys], axis=1)], dtype=np.float32)
+            pts_orig = cv2.perspectiveTransform(pts_bev, M_inv)
+            cv2.polylines(draw_img, [np.int32(pts_orig)[0]], False, color, thickness)
+
+        transform_and_draw(left_xs, left_ys, (255, 0, 0), thickness=2)
+        transform_and_draw(right_xs, right_ys, (0, 0, 255), thickness=2)
+        transform_and_draw(center_xs, center_ys, (0, 255, 0), thickness=3)
+
         return draw_img
 
     def image_to_vehicle(self, pt_bev):
@@ -863,12 +896,14 @@ class LaneFollowerNode(Node):
         cv2.putText(bev_im_for_drawing, f"Lookahead: {dynamic_lookahead_distance:.2f}m", (10, 90),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-        original_with_center = self.draw_path_on_original(
+        original_with_drivable_area = self.draw_drivable_area_on_original(
             im0s,
+            final_left_xs,
+            final_left_ys,
+            final_right_xs,
+            final_right_ys,
             self.tracked_center_path['xs'],
             self.tracked_center_path['ys'],
-            color=(0, 255, 0),
-            thickness=3
         )
 
         msg = CompressedImage()
@@ -876,12 +911,12 @@ class LaneFollowerNode(Node):
         msg.header.frame_id = "base_link"
         msg.format = "jpeg"
 
-        success, encoded_img = cv2.imencode('.jpg', original_with_center)
+        success, encoded_img = cv2.imencode('.jpg', original_with_drivable_area)
         if success:
             msg.data = encoded_img.tobytes()
             self.pub_drivable_area.publish(msg)
 
-        cv2.imshow("Original Camera View", original_with_center)
+        cv2.imshow("Original Camera View", original_with_drivable_area)
         cv2.imshow("Final Path & Logs (on BEV)", bev_im_for_drawing)
         cv2.imshow("Roboflow Detections (on BEV)", annotated_frame)
         cv2.waitKey(1)
