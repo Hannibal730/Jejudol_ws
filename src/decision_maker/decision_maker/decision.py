@@ -19,7 +19,7 @@ DEFAULTS = {
     'log_rate_hz': 1.0,
     
     'emergency_deceleration_sec': 1.0,
-    'emergency_off_delay_sec': 5.0,
+    'emergency_recovery_delay_sec': 2.0,
     
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,
@@ -63,8 +63,7 @@ MISSION_RRT = 'rrt'
 # 1) lane_detection_status=True and num_lidar_cone!=0 -> 2-a, 아니면 2-b
 # 2-a) emergency_active=True  -> mission_state=emergency
 #      emergency_active=False -> mission_state=moon_course
-#      (emergency_active는 /emergency raw 신호에 off-delay 필터를 적용한 값.)
-#      (false가 잠깐 들어와도, 마지막 true 시점으로부터 emergency_off_delay_sec가 지나기 전까지는 emergency_active를 계속 true로 유지)
+#      (emergency_active는 /emergency raw 신호를 그대로 반영한 값.)
 #      (감속 계획이 리셋되는 경우는 emergency 상태를 벗어날 때(decel_active=False로 바뀔 때))
 # 2-b) lane_detection_status=True -> mission_state=lane
 # 3)   num_lidar_cone==0 -> mission_state=gps
@@ -90,7 +89,7 @@ class DecisionNode(Node):
         self.publish_rate_hz = float(self.get_parameter('publish_rate_hz').value)
         self.log_rate_hz = float(self.get_parameter('log_rate_hz').value)
         self.emergency_deceleration_sec = float(self.get_parameter('emergency_deceleration_sec').value)
-        self.emergency_off_delay_sec = float(self.get_parameter('emergency_off_delay_sec').value)
+        self.emergency_recovery_delay_sec = float(self.get_parameter('emergency_recovery_delay_sec').value)
         self.auto_steer_angle_abs_max = float(self.get_parameter('auto_steer_angle_abs_max').value)
         self.auto_throttle_max = float(self.get_parameter('auto_throttle_max').value)
         self.auto_throttle_moon_course = float(self.get_parameter('auto_throttle_moon_course').value)
@@ -110,8 +109,8 @@ class DecisionNode(Node):
             self.publish_rate_hz = DEFAULTS['publish_rate_hz']
         if self.emergency_deceleration_sec <= 0.0:
             self.emergency_deceleration_sec = DEFAULTS['emergency_deceleration_sec']
-        if self.emergency_off_delay_sec < 0.0:
-            self.emergency_off_delay_sec = DEFAULTS['emergency_off_delay_sec']
+        if self.emergency_recovery_delay_sec < 0.0:
+            self.emergency_recovery_delay_sec = DEFAULTS['emergency_recovery_delay_sec']
         if self.log_rate_hz < 0.0:
             self.log_rate_hz = DEFAULTS['log_rate_hz']
         if self.auto_steer_angle_abs_max <= 0.0:
@@ -129,7 +128,7 @@ class DecisionNode(Node):
         self.num_lidar_cone = 0
         self.emergency_raw = False
         self.emergency_active = False
-        self.last_emergency_true_time = -1.0e9
+        self.emergency_exit_time = -1.0e9
         self.auto_steer_angle_rrt = 0.0
         self.auto_steer_angle_rrt_caution = 0.0
         self.auto_steer_angle_yolotl = 0.0
@@ -191,8 +190,6 @@ class DecisionNode(Node):
 
     def _emergency_cb(self, msg: Bool):
         self.emergency_raw = bool(msg.data)
-        if self.emergency_raw:
-            self.last_emergency_true_time = self._now_sec()
 
     def _steer_rrt_cb(self, msg: Float32):
         self.auto_steer_angle_rrt = float(msg.data)
@@ -217,11 +214,6 @@ class DecisionNode(Node):
     def _clamp_steer(self, steer_value: float) -> float:
         # "< max" 조건을 만족시키기 위해 아주 작은 마진을 둠
         return self._clamp(steer_value, -self.steer_limit, self.steer_limit)
-
-    def _compute_emergency_active(self, now_sec: float) -> bool:
-        if self.emergency_raw:
-            return True
-        return (now_sec - self.last_emergency_true_time) <= self.emergency_off_delay_sec
 
     def _compute_emergency_throttle(self, now_sec: float) -> float:
         # 2-a + emergency=True:
@@ -366,9 +358,10 @@ class DecisionNode(Node):
         lane_on = self.lane_detection_status
         cone_count = self.num_lidar_cone
 
+        if self.emergency_active:
+            return MISSION_EMERGENCY
+
         if lane_on and (cone_count != 0):
-            if self.emergency_active:
-                return MISSION_EMERGENCY
             return MISSION_MOON_COURSE
 
         if lane_on:
@@ -392,7 +385,7 @@ class DecisionNode(Node):
 
         self.get_logger().info(
             f'mission_state={self.current_mission_state}, '
-            f'emergency={self.emergency_raw}, emergency_off_delay={self.emergency_active}, '
+            f'emergency={self.emergency_raw}, emergency_active={self.emergency_active}, '
             f'/auto_steer_angle={steer_cmd:.3f}, '
             f'/auto_throttle={throttle_cmd:.3f}'
         )
@@ -402,8 +395,13 @@ class DecisionNode(Node):
         if self._consume_spacebar_request():
             self._toggle_spacebar_stop(now_sec)
 
-        self.emergency_active = self._compute_emergency_active(now_sec)
+        self.emergency_active = self.emergency_raw
         state = self._get_mission_state()
+
+        # emergency 상태에서 다른 상태로 방금 전환되었는지 확인하여 이탈 시간 기록
+        if self.current_mission_state == MISSION_EMERGENCY and state != MISSION_EMERGENCY:
+            self.emergency_exit_time = now_sec
+
         self.current_mission_state = state
 
         if state == MISSION_EMERGENCY:
@@ -441,6 +439,10 @@ class DecisionNode(Node):
 
         # 모든 state에서 publish 직전 최종 steer 안전장치 재적용
         steer_cmd = self._clamp_steer(steer_cmd)
+
+        # emergency 종료 후 지정된 시간(초) 동안은 출발하지 않고 대기(Throttle 0.0 유지)
+        if (now_sec - self.emergency_exit_time) < self.emergency_recovery_delay_sec:
+            throttle_cmd = 0.0
 
         # 스페이스바 감속 오버라이드(미션 throttle보다 우선)
         if self.spacebar_stop_active:
