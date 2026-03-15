@@ -383,7 +383,7 @@ class LaneFollowerNode(Node):
         self.MAX_LANE_AGE = 7
         self.L = 0.73
 
-        self.THROTTLE_MIN, self.THROTTLE_MAX = 0.2, 1.0
+        self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4,1.0
         self.current_throttle = self.THROTTLE_MIN
 
         self.MIN_LOOKAHEAD_DISTANCE = 1.8
@@ -916,9 +916,9 @@ class LaneFollowerNode(Node):
             msg.data = encoded_img.tobytes()
             self.pub_drivable_area.publish(msg)
 
-        cv2.imshow("Original Camera View", original_with_drivable_area)
+        #cv2.imshow("Original Camera View", original_with_drivable_area)
         cv2.imshow("Final Path & Logs (on BEV)", bev_im_for_drawing)
-        cv2.imshow("Roboflow Detections (on BEV)", annotated_frame)
+        #cv2.imshow("Roboflow Detections (on BEV)", annotated_frame)
         cv2.waitKey(1)
 
 
