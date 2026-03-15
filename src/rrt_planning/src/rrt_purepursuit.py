@@ -34,8 +34,8 @@ class MaRRTPurePursuit(Node):
         self.declare_parameter('use_arc_length_lookahead', True)
         self.declare_parameter('use_throttle_based_lookahead', True)
         self.declare_parameter('throttle_topic', '/auto_throttle')
-        self.declare_parameter('throttle_min', 0.4) # 단순히 동적ld 계산을 위해 구독하던 /auto_throttle을 클리핑. 이걸로 클리핑한 쓰로틀 내용을 실제 차량 쓰로틀 연산을 위해 발행하진 않음.
-        self.declare_parameter('throttle_max', 0.6) 
+        self.declare_parameter('throttle_min', 0.2) # 단순히 동적ld 계산을 위해 구독하던 /auto_throttle을 클리핑. 이걸로 클리핑한 쓰로틀 내용을 실제 차량 쓰로틀 연산을 위해 발행하진 않음.
+        self.declare_parameter('throttle_max', 0.8) 
         self.declare_parameter('lookahead_min_distance', 1.8)
         self.declare_parameter('lookahead_max_distance', 3.5)
         # velodyne가 후륜축보다 +x(전방)으로 있을 때, 후륜축의 velodyne 기준 좌표는 음수 x

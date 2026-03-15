@@ -288,7 +288,7 @@ class MaRRTPathPlanNode(Node):
         frontConesDist = 12
         frontCones = self.getFrontConeObstacles(self.map, frontConesDist)
 
-        coneObstacleSize = 0.8  # 트래픽 콘 장애물의 반지름 (0.8m)
+        coneObstacleSize = 0.6  # 트래픽 콘 장애물의 반지름 (0.8m)
         # 트래픽 콘들로 이루어진 장애물 리스트 생성
         self.coneObstacleList = [(cone.x, cone.y, coneObstacleSize) for cone in frontCones]
 
@@ -359,7 +359,7 @@ class MaRRTPathPlanNode(Node):
         """트리 파라미터 조정 구간"""                
 
         start = [self.carPosX, self.carPosY, self.carPosYaw]
-        iterationNumber = 500
+        iterationNumber = 30
         
         # RRT 경로 계획에서 최대 트리 가지 길이
         planDistance = 3.6
