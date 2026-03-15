@@ -45,7 +45,6 @@ ros2 run serial_bridge serial_bridge --ros-args -p port:=/dev/arduino_bridge
 ================자율주행================
 
 리모컨 켜서 오토 모드.
-
 차량 멈출 땐 판단노드 터미널에서 스페이스바.
 
 ================================
@@ -68,30 +67,10 @@ ros2 topic echo /f9p/navpvt --field num_sv, .../f9r/navpvt --field num_sv
 
 
 ros2 bag record <topic_name_1> <topic_name_2> ...
-ros2 bag record /turtle1/cmd_vel
+ros2 bag record /image_raw/compressed /velodyne_points /f9r/fix /f9p/fix
 ros2 bag record /image_raw/compressed --compression-format zstd --compression-mode file
 
 
-ros2 bag record \
-/camera3/image_raw/compressed \
-/camera/color/camera_info \
-/camera/color/image_raw/compressed \
-/camera/aligned_depth_to_color/image_raw \
-/camera1/image_raw/compressed \
-/camera2/image_raw/compressed \
-/tf \
-/tf_static \
--o my_robot_run_$(date +%Y-%m-%d-%H-%M-%S) \
--s mcap \
---compression-mode file \
---compression-format zstd
-
-
-앱코는 왼쪽에서 세번째로.
-v4l2-ctl --list-devices
-ffplay -f v4l2 /dev/video2
-
-ffplay -f v4l2 -input_format mjpeg -video_size 1280x720 /dev/video2
 
 (imu 사용 안 함. ros2 launch myahrs_ros2_driver myahrs_ros2_driver.launch.py)
 

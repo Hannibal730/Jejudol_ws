@@ -76,11 +76,6 @@ install(
   DESTINATION include
 )
 
-# Install Python scripts
-install(PROGRAMS
-  src/f9r_to_csv.py
-  DESTINATION lib/${PROJECT_NAME}
-)
 
 # Install launch and config files
 install(DIRECTORY

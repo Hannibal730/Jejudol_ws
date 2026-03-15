@@ -323,7 +323,7 @@ class LaneFollowerNode(Node):
         self.get_logger().info("[Lane Follower] Initializing...")
 
         # True: arc length 기반 (새로운 방식), False: 전방 거리 기반 (기존 방식)
-        self.use_arc_length_lookahead = True
+        self.use_arc_length_lookahead = False
 
         self.bridge = CvBridge()
 
@@ -383,7 +383,7 @@ class LaneFollowerNode(Node):
         self.MAX_LANE_AGE = 7
         self.L = 0.73
 
-        self.THROTTLE_MIN, self.THROTTLE_MAX = 0.4, 0.6
+        self.THROTTLE_MIN, self.THROTTLE_MAX = 0.2, 1.0
         self.current_throttle = self.THROTTLE_MIN
 
         self.MIN_LOOKAHEAD_DISTANCE = 1.8
