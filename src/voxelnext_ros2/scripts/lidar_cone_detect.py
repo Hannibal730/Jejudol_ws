@@ -491,9 +491,9 @@ class CenterObjectDetect(Node):
                 marker.pose.position.z = 0.0
                 marker.pose.orientation.w = 1.0 # No rotation needed for a sphere
 
-                marker.scale.x = 0.3
-                marker.scale.y = 0.3
-                marker.scale.z = 0.3
+                marker.scale.x = 0.2
+                marker.scale.y = 0.2
+                marker.scale.z = 0.2
 
                 marker.color.a = 1.0
                 marker.color.r = float(color[0])

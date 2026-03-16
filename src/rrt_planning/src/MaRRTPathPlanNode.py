@@ -41,7 +41,31 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('roi_end_topic', '/gps/f9r_roi_end_velodyne')
         self.declare_parameter('rrt_target_visual_topic', '/rrt/rrt_target')
         self.declare_parameter('use_roi_end_as_rrt_target', True)
-        self.declare_parameter('allow_cone_fallback_target', False)
+        self.declare_parameter('allow_cone_fallback_target', True)
+        
+        self.declare_parameter('rrt_front_cones_dist', 12.0)
+        self.declare_parameter('rrt_front_cones_extended_dist', 15.0)
+        self.declare_parameter('rrt_front_behind_dist', 1.0)
+        
+        self.declare_parameter('rrt_cone_obstacle_radius', 0.5)
+        self.declare_parameter('rrt_target_radius', 0.1)
+        self.declare_parameter('rrt_cone_fallback_min_dist', 6.0)
+        self.declare_parameter('rrt_iteration_count', 30)
+        self.declare_parameter('rrt_plan_distance', 3.6)
+        self.declare_parameter('rrt_expand_distance', 0.7)
+        self.declare_parameter('rrt_expand_angle_deg', 22.0)
+        self.declare_parameter('rrt_waypoint_max_accepted_edge_length', 7.0)
+        self.declare_parameter('rrt_waypoint_max_edge_parts_ratio', 3.0)
+        self.declare_parameter('rrt_merge_max_dist_to_save_waypoint', 2.0)
+        self.declare_parameter('rrt_merge_max_waypoint_save_count', 2)
+        self.declare_parameter('rrt_merge_waypoint_dist_tolerance', 1000.0)
+        self.declare_parameter('rrt_saved_waypoint_preloop_threshold', 15)
+        self.declare_parameter('rrt_filter_dist_change_limit', 2.0)
+        self.declare_parameter('rrt_filter_new_point_alpha', 0.2)
+        self.declare_parameter('rrt_filter_max_discard_reset', 2)
+        self.declare_parameter('rrt_branch_cone_dist_limit', 4.0)
+        self.declare_parameter('rrt_branch_both_sides_improve_factor', 3.0)
+        self.declare_parameter('rrt_branch_min_acceptable_rating', 90.0)
 
         self.shouldPublishWaypoints = bool(self.get_parameter('publishWaypoints').value)
         self.shouldPublishPredefined = bool(self.get_parameter('publishPredefined').value)
@@ -54,6 +78,28 @@ class MaRRTPathPlanNode(Node):
         self.rrt_target_visual_topic = str(self.get_parameter('rrt_target_visual_topic').value)
         self.use_roi_end_as_rrt_target = bool(self.get_parameter('use_roi_end_as_rrt_target').value)
         self.allow_cone_fallback_target = bool(self.get_parameter('allow_cone_fallback_target').value)
+        self.rrt_front_cones_dist = float(self.get_parameter('rrt_front_cones_dist').value)
+        self.rrt_front_cones_extended_dist = float(self.get_parameter('rrt_front_cones_extended_dist').value)
+        self.rrt_front_behind_dist = float(self.get_parameter('rrt_front_behind_dist').value)
+        self.rrt_cone_obstacle_radius = float(self.get_parameter('rrt_cone_obstacle_radius').value)
+        self.rrt_target_radius = float(self.get_parameter('rrt_target_radius').value)
+        self.rrt_cone_fallback_min_dist = float(self.get_parameter('rrt_cone_fallback_min_dist').value)
+        self.rrt_iteration_count = int(self.get_parameter('rrt_iteration_count').value)
+        self.rrt_plan_distance = float(self.get_parameter('rrt_plan_distance').value)
+        self.rrt_expand_distance = float(self.get_parameter('rrt_expand_distance').value)
+        self.rrt_expand_angle_deg = float(self.get_parameter('rrt_expand_angle_deg').value)
+        self.rrt_waypoint_max_accepted_edge_length = float(self.get_parameter('rrt_waypoint_max_accepted_edge_length').value)
+        self.rrt_waypoint_max_edge_parts_ratio = float(self.get_parameter('rrt_waypoint_max_edge_parts_ratio').value)
+        self.rrt_merge_max_dist_to_save_waypoint = float(self.get_parameter('rrt_merge_max_dist_to_save_waypoint').value)
+        self.rrt_merge_max_waypoint_save_count = int(self.get_parameter('rrt_merge_max_waypoint_save_count').value)
+        self.rrt_merge_waypoint_dist_tolerance = float(self.get_parameter('rrt_merge_waypoint_dist_tolerance').value)
+        self.rrt_saved_waypoint_preloop_threshold = int(self.get_parameter('rrt_saved_waypoint_preloop_threshold').value)
+        self.rrt_filter_dist_change_limit = float(self.get_parameter('rrt_filter_dist_change_limit').value)
+        self.rrt_filter_new_point_alpha = float(self.get_parameter('rrt_filter_new_point_alpha').value)
+        self.rrt_filter_max_discard_reset = int(self.get_parameter('rrt_filter_max_discard_reset').value)
+        self.rrt_branch_cone_dist_limit = float(self.get_parameter('rrt_branch_cone_dist_limit').value)
+        self.rrt_branch_both_sides_improve_factor = float(self.get_parameter('rrt_branch_both_sides_improve_factor').value)
+        self.rrt_branch_min_acceptable_rating = float(self.get_parameter('rrt_branch_min_acceptable_rating').value)
 
         waypointsFrequency = float(self.get_parameter('desiredWaypointsFrequency').value)
         if waypointsFrequency <= 0.0:
@@ -64,6 +110,28 @@ class MaRRTPathPlanNode(Node):
         sample_frequency = float(self.get_parameter('sample_frequency').value)
         if sample_frequency <= 0.0:
             sample_frequency = 20.0
+        self.rrt_front_cones_dist = max(0.1, self.rrt_front_cones_dist)
+        self.rrt_front_cones_extended_dist = max(self.rrt_front_cones_dist, self.rrt_front_cones_extended_dist)
+        self.rrt_front_behind_dist = max(0.0, self.rrt_front_behind_dist)
+        self.rrt_cone_obstacle_radius = max(0.01, self.rrt_cone_obstacle_radius)
+        self.rrt_target_radius = max(0.01, self.rrt_target_radius)
+        self.rrt_cone_fallback_min_dist = max(0.0, self.rrt_cone_fallback_min_dist)
+        self.rrt_iteration_count = max(1, self.rrt_iteration_count)
+        self.rrt_expand_distance = max(0.01, self.rrt_expand_distance)
+        self.rrt_plan_distance = max(self.rrt_expand_distance + 1e-3, self.rrt_plan_distance)
+        self.rrt_expand_angle_deg = max(0.1, self.rrt_expand_angle_deg)
+        self.rrt_waypoint_max_accepted_edge_length = max(0.01, self.rrt_waypoint_max_accepted_edge_length)
+        self.rrt_waypoint_max_edge_parts_ratio = max(1.0, self.rrt_waypoint_max_edge_parts_ratio)
+        self.rrt_merge_max_dist_to_save_waypoint = max(0.01, self.rrt_merge_max_dist_to_save_waypoint)
+        self.rrt_merge_max_waypoint_save_count = max(1, self.rrt_merge_max_waypoint_save_count)
+        self.rrt_merge_waypoint_dist_tolerance = max(0.01, self.rrt_merge_waypoint_dist_tolerance)
+        self.rrt_saved_waypoint_preloop_threshold = max(1, self.rrt_saved_waypoint_preloop_threshold)
+        self.rrt_filter_dist_change_limit = max(0.01, self.rrt_filter_dist_change_limit)
+        self.rrt_filter_new_point_alpha = max(0.0, min(1.0, self.rrt_filter_new_point_alpha))
+        self.rrt_filter_max_discard_reset = max(1, self.rrt_filter_max_discard_reset)
+        self.rrt_branch_cone_dist_limit = max(0.01, self.rrt_branch_cone_dist_limit)
+        self.rrt_branch_both_sides_improve_factor = max(1.0, self.rrt_branch_both_sides_improve_factor)
+        self.rrt_branch_min_acceptable_rating = max(0.0, self.rrt_branch_min_acceptable_rating)
 
         """
         구독자들
@@ -129,7 +197,9 @@ class MaRRTPathPlanNode(Node):
         self.get_logger().info(
             f'Subscribed obstacle centers from {self.obstacle_topic}, ROI goal from {self.roi_end_topic}, '
             f'ROI-as-target={self.use_roi_end_as_rrt_target}, cone-fallback={self.allow_cone_fallback_target}, '
-            f'running planner at {sample_frequency:.1f} Hz'
+            f'running planner at {sample_frequency:.1f} Hz, '
+            f'iter={self.rrt_iteration_count}, plan={self.rrt_plan_distance:.2f}, '
+            f'expand={self.rrt_expand_distance:.2f}, turn={self.rrt_expand_angle_deg:.1f}'
         )
 
     def _now(self):
@@ -214,7 +284,7 @@ class MaRRTPathPlanNode(Node):
         marker.scale.y = 0.5
         marker.scale.z = 0.5
 
-        marker.color.a = 0.4
+        marker.color.a = 0.7
         marker.color.r = 1.0
         marker.color.g = 0.0
         marker.color.b = 0.0
@@ -285,10 +355,9 @@ class MaRRTPathPlanNode(Node):
             self.publishRrtTargetVisual(None)
             return
 
-        frontConesDist = 12
-        frontCones = self.getFrontConeObstacles(self.map, frontConesDist)
+        frontCones = self.getFrontConeObstacles(self.map, self.rrt_front_cones_dist)
 
-        coneObstacleSize = 0.6  # 트래픽 콘 장애물의 반지름 (0.8m)
+        coneObstacleSize = self.rrt_cone_obstacle_radius
         # 트래픽 콘들로 이루어진 장애물 리스트 생성
         self.coneObstacleList = [(cone.x, cone.y, coneObstacleSize) for cone in frontCones]
 
@@ -305,7 +374,7 @@ class MaRRTPathPlanNode(Node):
         
         # 이후 기존 코드대로 rrtTarget 설정 및 RRT 실행
         rrtTarget = []
-        targetRadius = 0.1  # 원하는 보수적인 rrt_target 반경 값
+        targetRadius = self.rrt_target_radius
                 
         roi_target = self.resolveRoiEndTarget() if self.use_roi_end_as_rrt_target else None
         if roi_target is not None:
@@ -322,7 +391,7 @@ class MaRRTPathPlanNode(Node):
             fallback_found = False
             for cone in frontCones:
                 coneDist = self.dist(self.carPosX, self.carPosY, cone.x, cone.y)
-                if coneDist > 6:
+                if coneDist > self.rrt_cone_fallback_min_dist:
                     self.rrt_target = self._point(cone.x, cone.y, 0.0)
                     rrtTarget.append((cone.x, cone.y, coneObstacleSize))
                     self.get_logger().info(
@@ -334,7 +403,8 @@ class MaRRTPathPlanNode(Node):
 
             if not fallback_found:
                 self.get_logger().warn(
-                    '[RRT target] source=NONE no ROI target and no fallback cone candidate (dist > 6m).'
+                    f'[RRT target] source=NONE no ROI target and no fallback cone candidate '
+                    f'(dist > {self.rrt_cone_fallback_min_dist:.2f}m).'
                 )
                 self.publishRrtTargetVisual(None)
                 return
@@ -356,33 +426,25 @@ class MaRRTPathPlanNode(Node):
         self.publishRrtTargetVisual(self.rrt_target)
 
             
-        """트리 파라미터 조정 구간"""                
-
         start = [self.carPosX, self.carPosY, self.carPosYaw]
-        iterationNumber = 30
-        
-        # RRT 경로 계획에서 최대 트리 가지 길이
-        planDistance = 3.6
-        
-        # RRT 노드 간 이동 거리 (스텝 길이)
-        expandDistance = 0.7
-        
-        # 다음 노드 생성 시 각도 제한 (회전 제한)
-        expandAngle = 22
 
-
-        """트리 파라미터 조정 구간""" 
-
-        rrt = ma_rrt.RRT(start, planDistance, obstacleList=obstacleList, expandDis=expandDistance, turnAngle=expandAngle, maxIter=iterationNumber, rrtTargets = rrtTarget)
+        rrt = ma_rrt.RRT(
+            start,
+            self.rrt_plan_distance,
+            obstacleList=obstacleList,
+            expandDis=self.rrt_expand_distance,
+            turnAngle=self.rrt_expand_angle_deg,
+            maxIter=self.rrt_iteration_count,
+            rrtTargets=rrtTarget,
+        )
         nodeList, leafNodes = rrt.Planning()
 
         self.publishTreeVisual(nodeList, leafNodes)
 
         # 기본 전방 범위보다 약간 넓은 범위에서 콘들을 모아 경로 평가나 보완에 활용
-        frontConesBiggerDist = 15
-        largerGroupFrontCones = self.getFrontConeObstacles(self.map, frontConesBiggerDist)
+        largerGroupFrontCones = self.getFrontConeObstacles(self.map, self.rrt_front_cones_extended_dist)
 
-        bestBranch = self.findBestBranch(leafNodes, nodeList, largerGroupFrontCones, coneObstacleSize, expandDistance, planDistance)
+        bestBranch = self.findBestBranch(leafNodes, nodeList, largerGroupFrontCones)
 
         if bestBranch:
             filteredBestBranch = self.getFilteredBestBranch(bestBranch)
@@ -405,15 +467,15 @@ class MaRRTPathPlanNode(Node):
             return
 
         # 차량의 현재 위치와 후보 웨이포인트 간의 거리가 2.0미터 이하일 때만 해당 웨이포인트를 저장 대상으로 고려
-        maxDistToSaveWaypoints = 2.0
+        maxDistToSaveWaypoints = self.rrt_merge_max_dist_to_save_waypoint
         
         # 새로운 웨이포인트 리스트에서 최대 2개까지만 저장 
-        maxWaypointAmountToSave = 2
+        maxWaypointAmountToSave = self.rrt_merge_max_waypoint_save_count
         
         # 기존에 저장된 웨이포인트와 새 후보 웨이포인트 간의 거리를 비교 -> 만약 두 점 간의 거리가 이 값보다 작으면, 두 점이 “거의 동일하다”고 판단하여 중복을 제거
-        waypointsDistTollerance = 1000
+        waypointsDistTollerance = self.rrt_merge_waypoint_dist_tolerance
 
-        if len(self.savedWaypoints) > 15:
+        if len(self.savedWaypoints) > self.rrt_saved_waypoint_preloop_threshold:
             firstSavedWaypoint = self.savedWaypoints[0]
 
             for waypoint in reversed(newWaypoints):
@@ -462,8 +524,8 @@ class MaRRTPathPlanNode(Node):
             a1 = np.array([node1.x, node1.y])
             a2 = np.array([node2.x, node2.y])
 
-            maxAcceptedEdgeLength = 7
-            maxEdgePartsRatio = 3
+            maxAcceptedEdgeLength = self.rrt_waypoint_max_accepted_edge_length
+            maxEdgePartsRatio = self.rrt_waypoint_max_edge_parts_ratio
 
             intersectedEdges = []
             for edge in delaunayEdges:
@@ -645,9 +707,9 @@ class MaRRTPathPlanNode(Node):
         if not bestBranch:
             return
 
-        everyPointDistChangeLimit = 2.0
-        newPointFilter = 0.2
-        maxDiscardAmountForReset = 2
+        everyPointDistChangeLimit = self.rrt_filter_dist_change_limit
+        newPointFilter = self.rrt_filter_new_point_alpha
+        maxDiscardAmountForReset = self.rrt_filter_max_discard_reset
 
         if not self.filteredBestBranch:
             self.filteredBestBranch = list(bestBranch)
@@ -712,15 +774,15 @@ class MaRRTPathPlanNode(Node):
 
         self.delaunayLinesVisualPub.publish(self._single_marker_array(marker))
 
-    def findBestBranch(self, leafNodes, nodeList, largerGroupFrontCones, coneObstacleSize, expandDistance, planDistance):
+    def findBestBranch(self, leafNodes, nodeList, largerGroupFrontCones):
         if not leafNodes:
             return
 
-        coneDistLimit = 4.0
-        coneDistanceLimitSq = coneDistLimit * coneDistLimit;
+        coneDistLimit = self.rrt_branch_cone_dist_limit
+        coneDistanceLimitSq = coneDistLimit * coneDistLimit
 
-        bothSidesImproveFactor = 3
-        minAcceptableBranchRating = 90
+        bothSidesImproveFactor = self.rrt_branch_both_sides_improve_factor
+        minAcceptableBranchRating = self.rrt_branch_min_acceptable_rating
 
         leafRatings = []
         for leaf in leafNodes:
@@ -739,7 +801,7 @@ class MaRRTPathPlanNode(Node):
                     if coneDistSq < coneDistanceLimitSq:
                         actualDist = math.sqrt(coneDistSq)
 
-                        if actualDist < coneObstacleSize:
+                        if actualDist < self.rrt_cone_obstacle_radius:
                             continue
 
                         nodeRating += (coneDistLimit - actualDist)
@@ -755,7 +817,10 @@ class MaRRTPathPlanNode(Node):
                 if (len(leftCones) > 0 and len(rightCones) > 0):
                     nodeRating *= bothSidesImproveFactor
 
-                nodeFactor = (node.cost - expandDistance)/(planDistance - expandDistance) + 1
+                nodeFactor = (
+                    (node.cost - self.rrt_expand_distance)
+                    / (self.rrt_plan_distance - self.rrt_expand_distance)
+                ) + 1
 
                 branchRating += nodeRating * nodeFactor
                 node = nodeList[node.parent]
@@ -870,7 +935,9 @@ class MaRRTPathPlanNode(Node):
         treeMarker.pose.orientation.w = 1.0
 
         treeMarker.color.a = 1.0
-        treeMarker.color.g = 0.7
+        treeMarker.color.r = 1.0
+        treeMarker.color.g = 1.0
+        treeMarker.color.b = 1.0
 
         treeMarker.lifetime = self._duration(0.2)
 
@@ -917,7 +984,7 @@ class MaRRTPathPlanNode(Node):
         headingVector = self.getHeadingVector()
         headingVectorOrt = [-headingVector[1], headingVector[0]]
 
-        behindDist = 1.0
+        behindDist = self.rrt_front_behind_dist
         carPosBehindPoint = [self.carPosX - behindDist * headingVector[0], self.carPosY - behindDist * headingVector[1]]
 
 
