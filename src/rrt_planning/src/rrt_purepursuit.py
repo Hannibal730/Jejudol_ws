@@ -35,8 +35,8 @@ class MaRRTPurePursuit(Node):
         self.declare_parameter('use_throttle_based_lookahead', True)
         self.declare_parameter('throttle_topic', '/auto_throttle')
         
-        self.declare_parameter('throttle_min', 0.2) # 단순히 동적ld 계산을 위해 구독하던 /auto_throttle을 클리핑. 이걸로 클리핑한 쓰로틀 내용을 실제 차량 쓰로틀 연산을 위해 발행하진 않음.
-        self.declare_parameter('throttle_max', 0.6) 
+        self.declare_parameter('throttle_min_for_ld', 0.2) # 단순히 동적ld 계산을 위해 구독하던 /auto_throttle을 클리핑. 이걸로 클리핑한 쓰로틀 내용을 실제 차량 쓰로틀 연산을 위해 발행하진 않음.
+        self.declare_parameter('throttle_max_for_ld', 0.6)
         self.declare_parameter('lookahead_min_distance', 1.5)
         self.declare_parameter('lookahead_max_distance', 2.0)
         
@@ -51,20 +51,20 @@ class MaRRTPurePursuit(Node):
         self.use_arc_length_lookahead = bool(self.get_parameter('use_arc_length_lookahead').value)
         self.use_throttle_based_lookahead = bool(self.get_parameter('use_throttle_based_lookahead').value)
         self.throttle_topic = str(self.get_parameter('throttle_topic').value)
-        self.throttle_min = float(self.get_parameter('throttle_min').value)
-        self.throttle_max = float(self.get_parameter('throttle_max').value)
+        self.throttle_min_for_ld = float(self.get_parameter('throttle_min_for_ld').value)
+        self.throttle_max_for_ld = float(self.get_parameter('throttle_max_for_ld').value)
         self.lookahead_min_distance = float(self.get_parameter('lookahead_min_distance').value)
         self.lookahead_max_distance = float(self.get_parameter('lookahead_max_distance').value)
         self.rear_axle_x_in_velodyne = float(self.get_parameter('rear_axle_x_in_velodyne').value)
         self.rear_axle_y_in_velodyne = float(self.get_parameter('rear_axle_y_in_velodyne').value)
         if self.max_steer_deg <= 0.0:
             self.max_steer_deg = 23.0
-        if self.throttle_max <= self.throttle_min:
-            self.throttle_max = self.throttle_min + 1e-3
+        if self.throttle_max_for_ld <= self.throttle_min_for_ld:
+            self.throttle_max_for_ld = self.throttle_min_for_ld + 1e-3
         if self.lookahead_max_distance < self.lookahead_min_distance:
             self.lookahead_max_distance = self.lookahead_min_distance
 
-        self.current_throttle = self.throttle_min
+        self.current_throttle = self.throttle_min_for_ld
 
         # 차량의 현재 위치 (velodyne 좌표계, 후륜축 중심)
         self.vehicle_x = self.rear_axle_x_in_velodyne
@@ -96,7 +96,7 @@ class MaRRTPurePursuit(Node):
         return math.atan2(siny_cosp, cosy_cosp)
 
     def throttle_callback(self, msg):
-        self.current_throttle = float(np.clip(msg.data, self.throttle_min, self.throttle_max))
+        self.current_throttle = float(np.clip(msg.data, self.throttle_min_for_ld, self.throttle_max_for_ld))
 
     def waypoints_callback(self, msg):
         # /waypoints 메시지에서 (x, y) 좌표 추출 (velodyne 좌표계)
@@ -189,8 +189,8 @@ class MaRRTPurePursuit(Node):
         # Lookahead distance
         Ld = self.Ld
         if self.use_throttle_based_lookahead:
-            v_norm = (self.current_throttle - self.throttle_min) / (
-                self.throttle_max - self.throttle_min + 1e-6
+            v_norm = (self.current_throttle - self.throttle_min_for_ld) / (
+                self.throttle_max_for_ld - self.throttle_min_for_ld + 1e-6
             )
             v_norm = float(np.clip(v_norm, 0.0, 1.0))
             ld_target = self.lookahead_min_distance + (

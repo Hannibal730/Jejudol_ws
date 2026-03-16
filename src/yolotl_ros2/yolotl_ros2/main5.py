@@ -383,8 +383,8 @@ class LaneFollowerNode(Node):
         self.MAX_LANE_AGE = 7
         self.L = 0.73
 
-        self.THROTTLE_MIN, self.THROTTLE_MAX = 0.1,0.3
-        self.current_throttle = self.THROTTLE_MIN
+        self.THROTTLE_MIN_FOR_LD, self.THROTTLE_MAX_FOR_LD = 0.1,0.3
+        self.current_throttle = self.THROTTLE_MIN_FOR_LD
 
         self.MIN_LOOKAHEAD_DISTANCE = 2.2
         self.MAX_LOOKAHEAD_DISTANCE = 3.5
@@ -427,7 +427,9 @@ class LaneFollowerNode(Node):
         self.frame_count = 0
 
     def throttle_callback(self, msg):
-        self.current_throttle = np.clip(msg.data, self.THROTTLE_MIN, self.THROTTLE_MAX)
+        self.current_throttle = np.clip(
+            msg.data, self.THROTTLE_MIN_FOR_LD, self.THROTTLE_MAX_FOR_LD
+        )
 
     def undistort_image(self, image):
         if not self.use_undistort or self.camera_matrix is None or self.dist_coeffs is None:
@@ -740,8 +742,8 @@ class LaneFollowerNode(Node):
 
                 self.pub_path.publish(path_msg)
 
-                v_norm = (self.current_throttle - self.THROTTLE_MIN) / (
-                    self.THROTTLE_MAX - self.THROTTLE_MIN + 1e-6
+                v_norm = (self.current_throttle - self.THROTTLE_MIN_FOR_LD) / (
+                    self.THROTTLE_MAX_FOR_LD - self.THROTTLE_MIN_FOR_LD + 1e-6
                 )
                 v_norm = np.clip(v_norm, 0.0, 1.0)
 
