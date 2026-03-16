@@ -94,7 +94,7 @@ MODEL:
         POST_PROCESSING:
 
             # SCORE_THRESH: Detections with a score below this threshold will be filtered out.
-            SCORE_THRESH: 0.6
+            SCORE_THRESH: 0.3
 
             # POST_CENTER_LIMIT_RANGE: Defines the 3D spatial limits (min and max coordinates) for the detected object centers.
             POST_CENTER_LIMIT_RANGE: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]

@@ -35,8 +35,8 @@ from builtin_interfaces.msg import Duration
 # -------------------------
 ROI_X_MIN = 0.0
 ROI_X_MAX = 3.5
-ROI_Y_MIN = -1.0
-ROI_Y_MAX = 1.0
+ROI_Y_MIN = -1.3
+ROI_Y_MAX = 1.3
 
 # -------------------------
 # Define colors for each class
