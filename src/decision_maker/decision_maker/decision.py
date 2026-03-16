@@ -18,11 +18,13 @@ DEFAULTS = {
     'publish_rate_hz': 30.0,
     'log_rate_hz': 1.0,
     
-    'emergency_deceleration_sec': 2.0,
-    'emergency_recovery_delay_sec': 1.0,
+    'emergency_deceleration_sec': 0.5,
+    'emergency_deceleration_target_throttle': 0.0,
+    'emergency_recovery_delay_sec': 0.0,
+    
     'decelerate_to_gps_sec': 1.5,
-    'decelerate_to_yolotl_sec': 2.5,
-    'decelerate_to_rrt_sec': 2.5,
+    'decelerate_to_yolotl_sec': 1.5,
+    'decelerate_to_rrt_sec': 1.5,
     
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,
@@ -36,18 +38,19 @@ DEFAULTS = {
     # k=4: 0.2481
     # k=5: 0.2323   
     
+    'auto_throttle_yolotl_max': 0.3,
+    'auto_throttle_yolotl_min': 0.1,
+    
     'auto_throttle_moon_course': 0.15,
     
-    'auto_throttle_yolotl_max': 1.0,
-    'auto_throttle_yolotl_min': 0.4,
+    'num_static_obstacle_threshold': 5,
+    'auto_throttle_static_obstacle': 0.3,
     
-    'auto_throttle_rrt_max': 0.8,
+    'auto_throttle_rrt_max': 0.6,
     'auto_throttle_rrt_min': 0.2,
     
     'auto_throttle_gps': 0.2,
-    'auto_throttle_static_obstacle': 0.3,
-
-    'num_static_obstacle_threshold': 5,
+    
     
     'mannual_deceleration_sec': 2.5,
     'manual_stop_use_spacebar': True,
@@ -62,18 +65,26 @@ MISSION_STATIC_OBSTACLE = 'static_obstacle'
 MISSION_RRT = 'rrt'
 
 
+
 # 동작 단계 요약
 # 1) lane_detection_status=True and num_lidar_cone!=0 -> 2-a, 아니면 2-b
 # 2-a) emergency_active=True  -> mission_state=emergency
+#      단, num_lidar_cone >= 5 이면 mission_state=moon_course
 #      emergency_active=False -> mission_state=moon_course
+#      moon_course 진입 후에는 num_lidar_cone==0이 될 때까지 moon_course 유지
+#      (유지 중에는 emergency=True여도 moon_course 유지)
 #      (emergency_active는 /emergency raw 신호를 그대로 반영한 값.)
 #      (감속 계획이 리셋되는 경우는 emergency 상태를 벗어날 때(decel_active=False로 바뀔 때))
 # 2-b) lane_detection_status=True -> mission_state=lane
 # 3)   num_lidar_cone==0 -> mission_state=gps
 # 4)   num_lidar_cone>=threshold -> mission_state=static_obstacle
 #      num_lidar_cone<threshold  -> mission_state=rrt
+
+
+
 # state별 제어
-# - emergency       : steer=yolotl, throttle은 현재값에서 emergency_deceleration_sec 동안 0.0으로 선형 감속
+# - emergency       : steer=yolotl, throttle은 현재값에서 emergency_deceleration_sec 동안
+#                     emergency_deceleration_target_throttle로 선형 감속
 # - moon_course     : steer=rrt_caution, throttle=auto_throttle_moon_course(고정)
 # - lane            : steer=yolotl, throttle=[yolotl_min, yolotl_max] 역비례 매핑
 #                     (lane로 전환 시 현재 throttle이 더 크면 decelerate_to_yolotl_sec 동안 선형 감속)
@@ -84,6 +95,9 @@ MISSION_RRT = 'rrt'
 #                     (rrt로 전환 시 현재 throttle이 더 크면 decelerate_to_rrt_sec 동안 선형 감속)
 # 5)   throttle 매핑 경로(2-b의 yolotl, 4단계의 rrt)에서는 매핑 전에 steer에 auto_steer_angle_abs_max 안전장치를 먼저 적용
 # 공통 안전장치: |auto_steer_angle| < auto_steer_angle_abs_max, 0<=auto_throttle<=auto_throttle_max
+
+
+
 class DecisionNode(Node):
     def __init__(self):
         super().__init__('decision_node')
@@ -95,6 +109,9 @@ class DecisionNode(Node):
         self.publish_rate_hz = float(self.get_parameter('publish_rate_hz').value)
         self.log_rate_hz = float(self.get_parameter('log_rate_hz').value)
         self.emergency_deceleration_sec = float(self.get_parameter('emergency_deceleration_sec').value)
+        self.emergency_deceleration_target_throttle = float(
+            self.get_parameter('emergency_deceleration_target_throttle').value
+        )
         self.emergency_recovery_delay_sec = float(self.get_parameter('emergency_recovery_delay_sec').value)
         self.decelerate_to_gps_sec = float(self.get_parameter('decelerate_to_gps_sec').value)
         self.decelerate_to_yolotl_sec = float(self.get_parameter('decelerate_to_yolotl_sec').value)
@@ -132,6 +149,11 @@ class DecisionNode(Node):
             self.auto_steer_angle_abs_max = DEFAULTS['auto_steer_angle_abs_max']
         if self.auto_throttle_max <= 0.0:
             self.auto_throttle_max = DEFAULTS['auto_throttle_max']
+        self.emergency_deceleration_target_throttle = self._clamp(
+            self.emergency_deceleration_target_throttle,
+            0.0,
+            self.auto_throttle_max,
+        )
         if self.num_static_obstacle_threshold < 0:
             self.num_static_obstacle_threshold = DEFAULTS['num_static_obstacle_threshold']
         if self.mannual_deceleration_sec <= 0.0:
@@ -149,6 +171,7 @@ class DecisionNode(Node):
         self.auto_steer_angle_yolotl = 0.0
         self.auto_steer_angle_gps = 0.0
         self.current_mission_state = MISSION_GPS
+        self.moon_course_hold_active = False
 
         # 긴급 감속 상태
         self.current_auto_throttle = 0.0
@@ -193,11 +216,13 @@ class DecisionNode(Node):
 
         self.get_logger().info(
             'decision_node started: publish_rate=%.1fHz emergency_deceleration_sec=%.2fs '
+            'emergency_target_throttle=%.3f '
             'decelerate_to_gps_sec=%.2fs decelerate_to_yolotl_sec=%.2fs decelerate_to_rrt_sec=%.2fs '
             'mannual_deceleration_sec=%.2fs auto_steer_angle_abs_max=%.2f auto_throttle_max=%.2f'
             % (
                 self.publish_rate_hz,
                 self.emergency_deceleration_sec,
+                self.emergency_deceleration_target_throttle,
                 self.decelerate_to_gps_sec,
                 self.decelerate_to_yolotl_sec,
                 self.decelerate_to_rrt_sec,
@@ -242,7 +267,7 @@ class DecisionNode(Node):
 
     def _compute_emergency_throttle(self, now_sec: float) -> float:
         # 2-a + emergency=True:
-        # 현재 throttle에서 0.0까지 emergency_deceleration_sec 동안 선형 감속
+        # 현재 throttle에서 target throttle까지 emergency_deceleration_sec 동안 선형 감속
         if not self.decel_active:
             self.decel_active = True
             self.decel_start_time = now_sec
@@ -250,7 +275,14 @@ class DecisionNode(Node):
 
         elapsed = now_sec - self.decel_start_time
         progress = self._clamp(elapsed / self.emergency_deceleration_sec, 0.0, 1.0)
-        return self.decel_start_throttle * (1.0 - progress)
+        target_throttle = self._clamp(
+            self.emergency_deceleration_target_throttle,
+            0.0,
+            self.decel_start_throttle,  # emergency에서는 감속만 허용(가속 방지)
+        )
+        return self.decel_start_throttle + (
+            (target_throttle - self.decel_start_throttle) * progress
+        )
 
     def _cancel_transition_deceleration(self):
         self.transition_decel_active = False
@@ -420,10 +452,23 @@ class DecisionNode(Node):
         lane_on = self.lane_detection_status
         cone_count = self.num_lidar_cone
 
+        # moon_course 유지 조건 해제: cone이 0이 되면 hold 종료
+        if cone_count == 0:
+            self.moon_course_hold_active = False
+
+        # moon_course 유지 조건: cone이 남아있는 동안은 emergency 여부와 무관하게 유지
+        if self.moon_course_hold_active and (cone_count != 0):
+            return MISSION_MOON_COURSE
+
         if self.emergency_active:
+            # lane 구간에서 cone이 충분히 많으면 emergency보다 moon_course를 우선
+            if lane_on and (cone_count >= 5):
+                self.moon_course_hold_active = True
+                return MISSION_MOON_COURSE
             return MISSION_EMERGENCY
 
         if lane_on and (cone_count != 0):
+            self.moon_course_hold_active = True
             return MISSION_MOON_COURSE
 
         if lane_on:
