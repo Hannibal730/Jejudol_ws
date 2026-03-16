@@ -19,10 +19,10 @@ DEFAULTS = {
     'log_rate_hz': 1.0,
     
     'emergency_deceleration_sec': 2.0,
-    'emergency_recovery_delay_sec': 2.0,
+    'emergency_recovery_delay_sec': 1.0,
     'decelerate_to_gps_sec': 1.5,
-    'decelerate_to_yolotl_sec': 1.5,
-    'decelerate_to_rrt_sec': 1.5,
+    'decelerate_to_yolotl_sec': 2.5,
+    'decelerate_to_rrt_sec': 2.5,
     
     'auto_steer_angle_abs_max': 23.0,
     'auto_throttle_max': 0.7,
