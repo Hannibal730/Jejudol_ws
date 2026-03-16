@@ -262,7 +262,7 @@ class MaRRTPurePursuit(Node):
         steer_deg = - math.degrees(steer_rad)
         steer_deg = max(-self.max_steer_deg, min(self.max_steer_deg, steer_deg))
         self.get_logger().info(
-            f'Pure Pursuit: Lookahead=({lookahead_point[0]:.2f}, {lookahead_point[1]:.2f}), '
+            f'Pure Pursuit: Ld={Ld:.2f}m, Lookahead=({lookahead_point[0]:.2f}, {lookahead_point[1]:.2f}), '
             f'alpha={math.degrees(alpha):.2f} deg, steer={steer_deg:.2f} deg ({steer_rad:.3f} rad)'
         )
 
