@@ -26,34 +26,42 @@ DEFAULTS = {
     'decelerate_to_yolotl_sec': 1.5,
     'decelerate_to_rrt_sec': 1.5,
     
+    # 안전 장치
     'auto_steer_angle_abs_max': 23.0,
-    'auto_throttle_max': 0.7,
+    'auto_throttle_max': 1.0,
     'throttle_curve_k': 0.0,  # k가 0.0이면 선형 감속. 그리고 k가 커질수록 같은 steer에서 throttle이 더 빨리 min 쪽으로 내려간다.
-    # 예시(현재 기본값 기준, max=0.5, min=0.2, abs_max=23):
+    # 예시 (abs_max=23, max=0.5, min=0.2 기준):
     # |steer|=10도일 때
     # k=0: 0.3696
     # k=1: 0.3327
     # k=2: 0.2985
     # k=3: 0.2700
     # k=4: 0.2481
-    # k=5: 0.2323   
+    # k=5: 0.2323
     
-    'auto_throttle_yolotl_max': 0.3,
+    
+    # 조향각: yolotl
     'auto_throttle_yolotl_min': 0.1,
+    'auto_throttle_yolotl_max': 0.3,
     
-    'auto_throttle_moon_course': 0.15,
+    # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_caution_purepursuit.py'    
+    'num_moon_course_threshold': 5,
+    'auto_throttle_moon_course': 0.1,
     
+    # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_caution_purepursuit.py'    
     'num_static_obstacle_threshold': 5,
     'auto_throttle_static_obstacle': 0.3,
     
-    'auto_throttle_rrt_max': 0.6,
+    # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_purepursuit.py'        
     'auto_throttle_rrt_min': 0.2,
+    'auto_throttle_rrt_max': 0.6,
     
+    # 조향각: '/home/hannibal/Jejudol_ws/src/gps_planning/scripts/gps_purepursuit.py'
     'auto_throttle_gps': 0.2,
     
     
-    'mannual_deceleration_sec': 2.5,
     'manual_stop_use_spacebar': True,
+    'mannual_deceleration_sec': 2.5,
 }
 
 # mission state 이름(요청 반영)
@@ -68,12 +76,11 @@ MISSION_RRT = 'rrt'
 
 # 동작 단계 요약
 # 1) lane_detection_status=True and num_lidar_cone!=0 -> 2-a, 아니면 2-b
-# 2-a) emergency_active=True  -> mission_state=emergency
-#      단, num_lidar_cone >= 5 이면 mission_state=moon_course
-#      emergency_active=False -> mission_state=moon_course
+# 2-a) emergency=True  -> mission_state=emergency
+#      단, num_lidar_cone >= num_moon_course_threshold 이면 mission_state=moon_course
+#      emergency=False -> mission_state=moon_course
 #      moon_course 진입 후에는 num_lidar_cone==0이 될 때까지 moon_course 유지
 #      (유지 중에는 emergency=True여도 moon_course 유지)
-#      (emergency_active는 /emergency raw 신호를 그대로 반영한 값.)
 #      (감속 계획이 리셋되는 경우는 emergency 상태를 벗어날 때(decel_active=False로 바뀔 때))
 # 2-b) lane_detection_status=True -> mission_state=lane
 # 3)   num_lidar_cone==0 -> mission_state=gps
@@ -126,6 +133,7 @@ class DecisionNode(Node):
         self.auto_throttle_gps = float(self.get_parameter('auto_throttle_gps').value)
         self.auto_throttle_static_obstacle = float(self.get_parameter('auto_throttle_static_obstacle').value)
         self.throttle_curve_k = float(self.get_parameter('throttle_curve_k').value)
+        self.num_moon_course_threshold = int(self.get_parameter('num_moon_course_threshold').value)
         self.num_static_obstacle_threshold = int(self.get_parameter('num_static_obstacle_threshold').value)
         self.mannual_deceleration_sec = float(self.get_parameter('mannual_deceleration_sec').value)
         self.manual_stop_use_spacebar = bool(self.get_parameter('manual_stop_use_spacebar').value)
@@ -154,6 +162,8 @@ class DecisionNode(Node):
             0.0,
             self.auto_throttle_max,
         )
+        if self.num_moon_course_threshold < 0:
+            self.num_moon_course_threshold = DEFAULTS['num_moon_course_threshold']
         if self.num_static_obstacle_threshold < 0:
             self.num_static_obstacle_threshold = DEFAULTS['num_static_obstacle_threshold']
         if self.mannual_deceleration_sec <= 0.0:
@@ -163,8 +173,7 @@ class DecisionNode(Node):
         # 입력 상태
         self.lane_detection_status = False
         self.num_lidar_cone = 0
-        self.emergency_raw = False
-        self.emergency_active = False
+        self.emergency = False
         self.emergency_exit_time = -1.0e9
         self.auto_steer_angle_rrt = 0.0
         self.auto_steer_angle_rrt_caution = 0.0
@@ -239,7 +248,7 @@ class DecisionNode(Node):
         self.num_lidar_cone = int(msg.data)
 
     def _emergency_cb(self, msg: Bool):
-        self.emergency_raw = bool(msg.data)
+        self.emergency = bool(msg.data)
 
     def _steer_rrt_cb(self, msg: Float32):
         self.auto_steer_angle_rrt = float(msg.data)
@@ -460,9 +469,9 @@ class DecisionNode(Node):
         if self.moon_course_hold_active and (cone_count != 0):
             return MISSION_MOON_COURSE
 
-        if self.emergency_active:
+        if self.emergency:
             # lane 구간에서 cone이 충분히 많으면 emergency보다 moon_course를 우선
-            if lane_on and (cone_count >= 5):
+            if lane_on and (cone_count >= self.num_moon_course_threshold):
                 self.moon_course_hold_active = True
                 return MISSION_MOON_COURSE
             return MISSION_EMERGENCY
@@ -492,7 +501,7 @@ class DecisionNode(Node):
 
         self.get_logger().info(
             f'mission_state={self.current_mission_state}, '
-            f'emergency={self.emergency_raw}, emergency_active={self.emergency_active}, '
+            f'emergency={self.emergency}, '
             f'/auto_steer_angle={steer_cmd:.3f}, '
             f'/auto_throttle={throttle_cmd:.3f}'
         )
@@ -502,7 +511,6 @@ class DecisionNode(Node):
         if self._consume_spacebar_request():
             self._toggle_spacebar_stop(now_sec)
 
-        self.emergency_active = self.emergency_raw
         state = self._get_mission_state()
         prev_state = self.current_mission_state
 
