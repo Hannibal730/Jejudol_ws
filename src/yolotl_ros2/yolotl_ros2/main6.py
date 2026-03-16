@@ -247,12 +247,12 @@ def offset_polyline_points(xs, ys, offset_px, direction=1.0, sample_step=20):
     if indices[-1] != n - 1:
         indices = np.append(indices, n - 1)
 
-    window = 30  # 노이즈를 줄이기 위해 기울기를 구할 참조 간격 설정
+    window = 100  # 노이즈를 줄이기 위해 기울기를 구할 참조 간격 설정
     
     # 2. NumPy 배열 연산(Vectorization)을 통한 고속 병렬 처리
     idx_prev = np.maximum(0, indices - window)
     idx_next = np.minimum(n - 1, indices + window)
-    
+
     dx = xs[idx_next] - xs[idx_prev]
     dy = ys[idx_next] - ys[idx_prev]
 
@@ -317,6 +317,7 @@ class LaneFollowerNode(Node):
 
         # True: arc length 기반 (새로운 방식), False: 전방 거리 기반 (기존 방식)
         self.use_arc_length_lookahead = False
+    
 
         self.bridge = CvBridge()
 
