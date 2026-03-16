@@ -81,9 +81,9 @@ class ConeDetectionNode(Node):
             self.get_logger().error(f"Failed to load BEV params: {e}")
 
         # 좌표 변환 상수 (demo_with_ros2.py와 동일)
-        self.m_per_pixel_y = 0.0025
-        self.y_offset_m = 1.25
-        self.m_per_pixel_x = 0.003578125
+        self.m_per_pixel_y = 0.0037
+        self.y_offset_m = 1.5
+        self.m_per_pixel_x = 0.0036
 
         self.get_logger().info(f"Loading YOLO model from: {weights_path}")
         
