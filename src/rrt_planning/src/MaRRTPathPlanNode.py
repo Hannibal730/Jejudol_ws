@@ -47,13 +47,15 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('rrt_front_cones_extended_dist', 15.0)
         self.declare_parameter('rrt_front_behind_dist', 1.0)
         
-        self.declare_parameter('rrt_cone_obstacle_radius', 0.5)
-        self.declare_parameter('rrt_target_radius', 0.1)
+        self.declare_parameter('rrt_cone_obstacle_radius', 0.6)
+        self.declare_parameter('rrt_target_radius', 0.3)
         self.declare_parameter('rrt_cone_fallback_min_dist', 6.0)
-        self.declare_parameter('rrt_iteration_count', 30)
+        self.declare_parameter('rrt_iteration_count', 50)
         self.declare_parameter('rrt_plan_distance', 3.6)
+        
         self.declare_parameter('rrt_expand_distance', 0.7)
         self.declare_parameter('rrt_expand_angle_deg', 22.0)
+        
         self.declare_parameter('rrt_waypoint_max_accepted_edge_length', 7.0)
         self.declare_parameter('rrt_waypoint_max_edge_parts_ratio', 3.0)
         self.declare_parameter('rrt_merge_max_dist_to_save_waypoint', 2.0)
@@ -63,6 +65,7 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('rrt_filter_dist_change_limit', 2.0)
         self.declare_parameter('rrt_filter_new_point_alpha', 0.2)
         self.declare_parameter('rrt_filter_max_discard_reset', 2)
+        
         self.declare_parameter('rrt_branch_cone_dist_limit', 4.0)
         self.declare_parameter('rrt_branch_both_sides_improve_factor', 3.0)
         self.declare_parameter('rrt_branch_min_acceptable_rating', 90.0)

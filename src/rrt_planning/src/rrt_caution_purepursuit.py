@@ -29,9 +29,11 @@ class MaRRTCautionPurePursuit(Node):
         super().__init__('rrt_caution_purepursuit')
 
         self.declare_parameter('wheelbase', 0.724)
-        self.declare_parameter('lookahead_distatnce_caution', 2.0)
+        
+        self.declare_parameter('lookahead_distatnce_caution', 1.5)
         self.declare_parameter('max_steer_deg', 23.0)
-        self.declare_parameter('use_arc_length_lookahead', True)
+        self.declare_parameter('use_arc_length_lookahead', False)
+        
         # velodyne가 후륜축보다 +x(전방)으로 있을 때, 후륜축의 velodyne 기준 좌표는 음수 x
         self.declare_parameter('rear_axle_x_in_velodyne', -0.82)
         self.declare_parameter('rear_axle_y_in_velodyne', 0.0)
