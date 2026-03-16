@@ -215,7 +215,7 @@ class ConeDetectionNode(Node):
 
             # [추가] 장애물(콘)이 2개 이상이면 EMERGENCY 표시 (크고 굵게)
             now = self.get_clock().now()
-            if obstacle_count >= 2:
+            if 2 <= obstacle_count < 4:
                 self.emergency_end_time = now + Duration(seconds=1.0)
 
             is_emergency = False
