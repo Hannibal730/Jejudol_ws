@@ -122,7 +122,7 @@ class LaneFollowerNode(Node):
 
         # 4. ROS Setup
         self.pub_steering = self.create_publisher(Float32, 'auto_steer_angle_lane', 1)
-        self.pub_lane_status = self.create_publisher(Bool, 'lane_detection_status', 1)
+        self.pub_lane_status = self.create_publisher(Bool, 'lane_detect', 1)
         self.sub_image = self.create_subscription(Image, self.opt.topic, self.image_callback, qos_profile_sensor_data)
         self.sub_throttle = self.create_subscription(Float32, 'auto_throttle', self.throttle_callback, 1)
 

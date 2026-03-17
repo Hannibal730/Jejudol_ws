@@ -75,14 +75,14 @@ MISSION_RRT = 'rrt'
 
 
 # 동작 단계 요약
-# 1) lane_detection_status=True and num_lidar_cone!=0 -> 2-a, 아니면 2-b
+# 1) lane_detect=True and num_lidar_cone!=0 -> 2-a, 아니면 2-b
 # 2-a) emergency=True  -> mission_state=emergency
 #      단, num_lidar_cone >= num_moon_course_threshold 이면 mission_state=moon_course
 #      emergency=False -> mission_state=moon_course
-#      moon_course 진입 후에는 num_lidar_cone==0이 될 때까지 moon_course 유지
-#      (유지 중에는 emergency=True여도 moon_course 유지)
+#      * moon_course 진입 후에는 num_lidar_cone==0이 될 때까지 moon_course 유지
+#      * (유지 중에는 emergency=True여도 moon_course 유지)
 #      (감속 계획이 리셋되는 경우는 emergency 상태를 벗어날 때(decel_active=False로 바뀔 때))
-# 2-b) lane_detection_status=True -> mission_state=lane
+# 2-b) lane_detect=True -> mission_state=lane
 # 3)   num_lidar_cone==0 -> mission_state=gps
 # 4)   num_lidar_cone>=threshold -> mission_state=static_obstacle
 #      num_lidar_cone<threshold  -> mission_state=rrt
@@ -171,7 +171,7 @@ class DecisionNode(Node):
         self.steer_limit = max(0.001, self.auto_steer_angle_abs_max - 1e-3)
 
         # 입력 상태
-        self.lane_detection_status = False
+        self.lane_detect = False
         self.num_lidar_cone = 0
         self.emergency = False
         self.emergency_exit_time = -1.0e9
@@ -208,7 +208,7 @@ class DecisionNode(Node):
         self._stdin_attr_backup = None
 
         # 입력 토픽 구독
-        self.create_subscription(Bool, '/lane_detection_status', self._lane_detection_cb, 10)
+        self.create_subscription(Bool, '/lane_detect', self._lane_detection_cb, 10)
         self.create_subscription(Int8, '/vn/num_lidar_cone', self._num_lidar_cone_cb, 10)
         self.create_subscription(Bool, '/emergency', self._emergency_cb, 10)
         self.create_subscription(Float32, '/auto_steer_angle_rrt', self._steer_rrt_cb, 10)
@@ -243,7 +243,7 @@ class DecisionNode(Node):
         )
 
     def _lane_detection_cb(self, msg: Bool):
-        self.lane_detection_status = bool(msg.data)
+        self.lane_detect = bool(msg.data)
 
     def _num_lidar_cone_cb(self, msg: Int8):
         self.num_lidar_cone = int(msg.data)
@@ -459,7 +459,7 @@ class DecisionNode(Node):
 
     def _get_mission_state(self) -> str:
         # 처리 속도와 가독성을 위해 상태를 한 번만 판정
-        lane_on = self.lane_detection_status
+        lane_on = self.lane_detect
         cone_count = self.num_lidar_cone
 
         # moon_course 유지 조건 해제: cone이 0이 되면 hold 종료

@@ -188,7 +188,7 @@ class LaneFollowerNode(Node):
 
         # 4. ROS Setup
         self.pub_steering = self.create_publisher(Float32, 'auto_steer_angle_yolotl', 1)
-        self.pub_lane_status = self.create_publisher(Bool, 'lane_detection_status', 1)
+        self.pub_lane_status = self.create_publisher(Bool, 'lane_detect', 1)
         self.pub_path = self.create_publisher(Path, 'lane_path', 10)
         self.pub_drivable_area = self.create_publisher(CompressedImage, 'drivable_area/compressed', 10)
         self.pub_lookahead = self.create_publisher(Float32, 'lookahead_distance', 1)

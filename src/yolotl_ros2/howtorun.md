@@ -19,7 +19,7 @@ j:~$ ros2 topic list
 /drivable_area
 /events/read_split
 /image_raw/compressed
-/lane_detection_status
+/lane_detect
 /lane_path
 /lookahead_distance
 /parameter_events
