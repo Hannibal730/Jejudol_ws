@@ -33,6 +33,8 @@ def generate_launch_description():
         executable='azimuth_angle_calculator_node',
         name='azimuth_angle_calculator_node',
         output='screen',
+        output_format='{line}',
+        ros_arguments=['--log-level', 'warn'],
         remappings=[
             ('/azimuth_angle', '/gps/azimuth_angle'),
         ]

@@ -2,6 +2,7 @@
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 #include "std_msgs/msg/float64.hpp"
 #include <cmath>
+#include <cstdio>
 
 /**
  * @brief 두 개의 GPS 센서로부터 데이터를 받아 azimuth_angle (Heading)를 계산하는 노드.
@@ -39,10 +40,6 @@ public:
         // 계산된 Yaw를 발행할 Publisher 설정
         yaw_publisher_ = this->create_publisher<std_msgs::msg::Float64>(yaw_topic, 10);
 
-        RCLCPP_INFO(this->get_logger(), "Azimuth angle Calculator 노드가 시작되었습니다.");
-        RCLCPP_INFO(this->get_logger(), "  - GPS 1 Topic: %s", gps1_topic.c_str());
-        RCLCPP_INFO(this->get_logger(), "  - GPS 2 Topic: %s", gps2_topic.c_str());
-        RCLCPP_INFO(this->get_logger(), "  - Yaw Topic: %s", yaw_topic.c_str());
     }
 
 private:
@@ -104,7 +101,10 @@ private:
         auto yaw_msg = std_msgs::msg::Float64();
         yaw_msg.data = bearing_deg;
         yaw_publisher_->publish(yaw_msg);
-        RCLCPP_INFO(this->get_logger(), "계산된 Azimuth_Angle: %.2f°", bearing_deg);
+        // ROS time + azimuth angle만 간단히 출력합니다.
+        const double ros_time_sec = this->get_clock()->now().seconds();
+        std::printf("[%.9f] Azimuth_Angle: %.2f°\n", ros_time_sec, bearing_deg);
+        std::fflush(stdout);
 
         // 한 번 계산에 사용된 데이터는 초기화하여 중복 계산 방지
         gps1_fix_ = nullptr;
