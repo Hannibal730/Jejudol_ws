@@ -41,7 +41,7 @@ class MaRRTPurePursuit(Node):
         self.declare_parameter('lookahead_max_distance', 2.0)
         
         # velodyne가 후륜축보다 +x(전방)으로 있을 때, 후륜축의 velodyne 기준 좌표는 음수 x
-        self.declare_parameter('rear_axle_x_in_velodyne', -0.82)
+        self.declare_parameter('rear_axle_x_in_velodyne', -0.52)
         self.declare_parameter('rear_axle_y_in_velodyne', 0.0)
 
         # 파라미터
