@@ -40,6 +40,7 @@ ros2 run rrt_planning rrt_purepursuit.py
 ros2 run rrt_planning rrt_caution_purepursuit
 
 ros2 run decision_maker decision
+ros2 run decision_maker visualizer
 ros2 run serial_bridge serial_bridge --ros-args -p port:=/dev/arduino_bridge
 
 ================자율주행================

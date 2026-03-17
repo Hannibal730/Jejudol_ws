@@ -11,7 +11,7 @@ import math
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool, Float32, Int8
+from std_msgs.msg import Bool, Float32, Int8, String
 
 # 실험용 변수 기본값(한 곳에서 관리)
 DEFAULTS = {
@@ -64,7 +64,7 @@ DEFAULTS = {
     'mannual_deceleration_sec': 2.5,
 }
 
-# mission state 이름(요청 반영)
+# mission state 이름
 MISSION_EMERGENCY = 'emergency'
 MISSION_MOON_COURSE = 'moon_course'
 MISSION_LANE = 'lane'
@@ -219,6 +219,7 @@ class DecisionNode(Node):
         # 출력 토픽 상시 발행
         self.auto_steer_pub = self.create_publisher(Float32, '/auto_steer_angle', 10)
         self.auto_throttle_pub = self.create_publisher(Float32, '/auto_throttle', 10)
+        self.mission_state_pub = self.create_publisher(String, '/mission_state', 10)
 
         self._start_manual_stop_listener()
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._on_timer)
@@ -622,6 +623,11 @@ class DecisionNode(Node):
         throttle_msg = Float32()
         throttle_msg.data = float(throttle_cmd)
         self.auto_throttle_pub.publish(throttle_msg)
+
+        mission_msg = String()
+        mission_msg.data = self.current_mission_state
+        self.mission_state_pub.publish(mission_msg)
+
         self._maybe_log_status(steer_cmd, throttle_cmd)
 
     def destroy_node(self):

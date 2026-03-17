@@ -19,6 +19,7 @@ setup(
     entry_points={
         'console_scripts': [
             'decision = decision_maker.decision:main',
+            'visualizer = decision_maker.visualizer:main',
         ],
     },
 )
