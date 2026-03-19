@@ -18,12 +18,13 @@ DEFAULTS = {
     'publish_rate_hz': 30.0,
     'log_rate_hz': 1.0,
     
-    'emergency_deceleration_sec': 0.5,
+    'emergency_deceleration_sec': 0.2,
     'emergency_deceleration_target_throttle': 0.0,
     'emergency_recovery_delay_sec': 0.0,
     
     'decelerate_to_gps_sec': 1.5,
     'decelerate_to_yolotl_sec': 1.5,
+    'decelerate_to_moon_sec': 0.5,
     'decelerate_to_rrt_sec': 1.5,
     
     # 안전 장치
@@ -41,11 +42,11 @@ DEFAULTS = {
     
     
     # 조향각: yolotl
-    'auto_throttle_yolotl_min': 0.1,
-    'auto_throttle_yolotl_max': 0.3,
+    'auto_throttle_yolotl_min': 0.4,
+    'auto_throttle_yolotl_max': 0.8,
     
     # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_caution_purepursuit.py'    
-    'num_moon_course_threshold': 5,
+    'num_moon_course_threshold': 4,
     'auto_throttle_moon_course': 0.1,
     
     # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_caution_purepursuit.py'    
@@ -57,7 +58,7 @@ DEFAULTS = {
     'auto_throttle_rrt_max': 0.6,
     
     # 조향각: '/home/hannibal/Jejudol_ws/src/gps_planning/scripts/gps_purepursuit.py'
-    'auto_throttle_gps': 0.2,
+    'auto_throttle_gps': 0.3,
     
     
     'manual_stop_use_spacebar': True,
@@ -93,6 +94,7 @@ MISSION_RRT = 'rrt'
 # - emergency       : steer=yolotl, throttle은 현재값에서 emergency_deceleration_sec 동안
 #                     emergency_deceleration_target_throttle로 선형 감속
 # - moon_course     : steer=rrt_caution, throttle=auto_throttle_moon_course(고정)
+#                     (moon_course로 전환 시 현재 throttle이 더 크면 decelerate_to_moon_sec 동안 선형 감속)
 # - lane            : steer=yolotl, throttle=[yolotl_min, yolotl_max] 역비례 매핑
 #                     (lane로 전환 시 현재 throttle이 더 크면 decelerate_to_yolotl_sec 동안 선형 감속)
 # - gps             : steer=gps, throttle=auto_throttle_gps(고정)
@@ -122,6 +124,7 @@ class DecisionNode(Node):
         self.emergency_recovery_delay_sec = float(self.get_parameter('emergency_recovery_delay_sec').value)
         self.decelerate_to_gps_sec = float(self.get_parameter('decelerate_to_gps_sec').value)
         self.decelerate_to_yolotl_sec = float(self.get_parameter('decelerate_to_yolotl_sec').value)
+        self.decelerate_to_moon_sec = float(self.get_parameter('decelerate_to_moon_sec').value)
         self.decelerate_to_rrt_sec = float(self.get_parameter('decelerate_to_rrt_sec').value)
         self.auto_steer_angle_abs_max = float(self.get_parameter('auto_steer_angle_abs_max').value)
         self.auto_throttle_max = float(self.get_parameter('auto_throttle_max').value)
@@ -141,7 +144,7 @@ class DecisionNode(Node):
         # 파라미터 안전 보정
         if self.publish_rate_hz <= 0.0:
             self.publish_rate_hz = DEFAULTS['publish_rate_hz']
-        if self.emergency_deceleration_sec <= 0.0:
+        if self.emergency_deceleration_sec < 0.0:
             self.emergency_deceleration_sec = DEFAULTS['emergency_deceleration_sec']
         if self.emergency_recovery_delay_sec < 0.0:
             self.emergency_recovery_delay_sec = DEFAULTS['emergency_recovery_delay_sec']
@@ -149,6 +152,8 @@ class DecisionNode(Node):
             self.decelerate_to_gps_sec = DEFAULTS['decelerate_to_gps_sec']
         if self.decelerate_to_yolotl_sec <= 0.0:
             self.decelerate_to_yolotl_sec = DEFAULTS['decelerate_to_yolotl_sec']
+        if self.decelerate_to_moon_sec <= 0.0:
+            self.decelerate_to_moon_sec = DEFAULTS['decelerate_to_moon_sec']
         if self.decelerate_to_rrt_sec <= 0.0:
             self.decelerate_to_rrt_sec = DEFAULTS['decelerate_to_rrt_sec']
         if self.log_rate_hz < 0.0:
@@ -227,7 +232,7 @@ class DecisionNode(Node):
         self.get_logger().info(
             'decision_node started: publish_rate=%.1fHz emergency_deceleration_sec=%.2fs '
             'emergency_target_throttle=%.3f '
-            'decelerate_to_gps_sec=%.2fs decelerate_to_yolotl_sec=%.2fs decelerate_to_rrt_sec=%.2fs '
+            'decelerate_to_gps_sec=%.2fs decelerate_to_yolotl_sec=%.2fs decelerate_to_moon_sec=%.2fs decelerate_to_rrt_sec=%.2fs '
             'mannual_deceleration_sec=%.2fs auto_steer_angle_abs_max=%.2f auto_throttle_max=%.2f'
             % (
                 self.publish_rate_hz,
@@ -235,6 +240,7 @@ class DecisionNode(Node):
                 self.emergency_deceleration_target_throttle,
                 self.decelerate_to_gps_sec,
                 self.decelerate_to_yolotl_sec,
+                self.decelerate_to_moon_sec,
                 self.decelerate_to_rrt_sec,
                 self.mannual_deceleration_sec,
                 self.auto_steer_angle_abs_max,
@@ -283,13 +289,17 @@ class DecisionNode(Node):
             self.decel_start_time = now_sec
             self.decel_start_throttle = self.current_auto_throttle
 
-        elapsed = now_sec - self.decel_start_time
-        progress = self._clamp(elapsed / self.emergency_deceleration_sec, 0.0, 1.0)
         target_throttle = self._clamp(
             self.emergency_deceleration_target_throttle,
             0.0,
             self.decel_start_throttle,  # emergency에서는 감속만 허용(가속 방지)
         )
+        # emergency_deceleration_sec==0.0이면 즉시 target_throttle 적용
+        if self.emergency_deceleration_sec <= 0.0:
+            return target_throttle
+
+        elapsed = now_sec - self.decel_start_time
+        progress = self._clamp(elapsed / self.emergency_deceleration_sec, 0.0, 1.0)
         return self.decel_start_throttle + (
             (target_throttle - self.decel_start_throttle) * progress
         )
@@ -465,6 +475,12 @@ class DecisionNode(Node):
         # moon_course 유지 조건 해제: cone이 0이 되면 hold 종료
         if cone_count == 0:
             self.moon_course_hold_active = False
+            # cone이 0이면 moon_course는 어떤 경우에도 선택하지 않음
+            if self.emergency:
+                return MISSION_EMERGENCY
+            if lane_on:
+                return MISSION_LANE
+            return MISSION_GPS
 
         # moon_course 유지 조건: cone이 남아있는 동안은 emergency 여부와 무관하게 유지
         if self.moon_course_hold_active and (cone_count != 0):
@@ -477,7 +493,8 @@ class DecisionNode(Node):
                 return MISSION_MOON_COURSE
             return MISSION_EMERGENCY
 
-        if lane_on and (cone_count != 0):
+        # if lane_on and (cone_count != 0):
+        if lane_on and (cone_count >= self.num_moon_course_threshold):
             self.moon_course_hold_active = True
             return MISSION_MOON_COURSE
 
@@ -530,9 +547,22 @@ class DecisionNode(Node):
             throttle_cmd = self._compute_emergency_throttle(now_sec)
         elif state == MISSION_MOON_COURSE:
             self.decel_active = False
-            self._cancel_transition_deceleration()
             steer_cmd = self._clamp_steer(self.auto_steer_angle_rrt_caution)
-            throttle_cmd = self.auto_throttle_moon_course
+            moon_target_throttle = self.auto_throttle_moon_course
+            if prev_state != MISSION_MOON_COURSE:
+                if self.current_auto_throttle > moon_target_throttle:
+                    self._start_transition_deceleration(
+                        now_sec=now_sec,
+                        target_state=MISSION_MOON_COURSE,
+                        target_throttle=moon_target_throttle,
+                        duration_sec=self.decelerate_to_moon_sec,
+                    )
+                else:
+                    self._cancel_transition_deceleration()
+            if self.transition_decel_active and self.transition_decel_target_state == MISSION_MOON_COURSE:
+                throttle_cmd = self._compute_transition_deceleration_throttle(now_sec)
+            else:
+                throttle_cmd = moon_target_throttle
         elif state == MISSION_LANE:
             self.decel_active = False
             steer_cmd = self._clamp_steer(self.auto_steer_angle_yolotl)
