@@ -47,7 +47,7 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('rrt_front_cones_extended_dist', 15.0)
         self.declare_parameter('rrt_front_behind_dist', 1.0)
         
-        self.declare_parameter('rrt_cone_obstacle_radius', 0.6)
+        self.declare_parameter('rrt_cone_obstacle_radius', 0.4)
         self.declare_parameter('rrt_target_radius', 0.3)
         self.declare_parameter('rrt_cone_fallback_min_dist', 6.0)
         self.declare_parameter('rrt_iteration_count', 50)
