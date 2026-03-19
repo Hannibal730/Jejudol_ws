@@ -16,7 +16,7 @@ class DecisionVisualizerNode(Node):
         self.declare_parameter('z', 5.0)
         self.declare_parameter('y_step', -1.0)
         self.declare_parameter('text_scale', 0.8)
-        self.declare_parameter('publish_rate_hz', 10.0)
+        self.declare_parameter('publish_rate_hz', 30.0)
 
         self.frame_id = str(self.get_parameter('frame_id').value)
         self.base_x = float(self.get_parameter('x').value)
@@ -29,7 +29,7 @@ class DecisionVisualizerNode(Node):
         if self.text_scale <= 0.0:
             self.text_scale = 0.8
         if self.publish_rate_hz <= 0.0:
-            self.publish_rate_hz = 10.0
+            self.publish_rate_hz = 30.0
 
         self.mission_state = 'unknown'
         self.auto_throttle = 0.0

@@ -16,9 +16,14 @@ install(
     src/MaRRTPathPlanNode.py
     src/ma_rrt.py
     src/rrt_purepursuit.py
-    src/rrt_caution_purepursuit.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  PROGRAMS
     src/rrt_caution_purepursuit.py
   DESTINATION lib/${PROJECT_NAME}
+  RENAME rrt_caution_purepursuit
 )
 
 ament_package()
