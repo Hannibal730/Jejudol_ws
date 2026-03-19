@@ -372,7 +372,7 @@ class LaneFollowerNode(Node):
             self.use_undistort = False
 
         # 3. 주행 파라미터
-        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0037, 1.50, 0.0036
+        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0036, 1.23, 0.0037
 
         self.tracked_lanes = {
             'left': {'xs': None, 'ys': None, 'age': 0},
@@ -383,11 +383,11 @@ class LaneFollowerNode(Node):
         self.MAX_LANE_AGE = 7
         self.L = 0.73
 
-        self.THROTTLE_MIN_FOR_LD, self.THROTTLE_MAX_FOR_LD = 0.1,0.3
+        self.THROTTLE_MIN_FOR_LD, self.THROTTLE_MAX_FOR_LD = 0.4,0.8
         self.current_throttle = self.THROTTLE_MIN_FOR_LD
 
-        self.MIN_LOOKAHEAD_DISTANCE = 2.2
-        self.MAX_LOOKAHEAD_DISTANCE = 3.5
+        self.MIN_LOOKAHEAD_DISTANCE = 2.0
+        self.MAX_LOOKAHEAD_DISTANCE = 2.5
         self.MAX_STEER_DEG = 23.0
         self.prev_steer_deg = 0.0
         self.MAX_STEER_RATE = 12.0
@@ -930,7 +930,7 @@ def main(args=None):
 
     package_share_directory = get_package_share_directory('yolotl_ros2')
     default_weights = os.path.join(package_share_directory, 'config', 'weights3.pt')
-    default_params = os.path.join(package_share_directory, 'config', 'bev_params_03162.npz')
+    default_params = os.path.join(package_share_directory, 'config', 'bev_params_03172.npz')
     default_calib = os.path.join(package_share_directory, 'config', 'camera_calibration.pkl')
 
     parser.add_argument('--weights', default=default_weights, help='Path to model weights')
