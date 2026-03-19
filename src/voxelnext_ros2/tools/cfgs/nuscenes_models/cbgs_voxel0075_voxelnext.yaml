@@ -94,7 +94,7 @@ MODEL:
         POST_PROCESSING:
 
             # SCORE_THRESH: Detections with a score below this threshold will be filtered out.
-            SCORE_THRESH: 0.3
+            SCORE_THRESH: 0.4
 
             # POST_CENTER_LIMIT_RANGE: Defines the 3D spatial limits (min and max coordinates) for the detected object centers.
             POST_CENTER_LIMIT_RANGE: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
@@ -105,6 +105,7 @@ MODEL:
             # NMS_CONFIG: Configuration parameters for Non-Maximum Suppression (NMS), which removes redundant detections.
             NMS_CONFIG:
                 NMS_TYPE: nms_gpu
+                # 작을수록 중복 많이 제거. 키울수록 중복 덜 제거. 0.05, 0.10, 0.15, 0.20
                 NMS_THRESH: 0.05
                 NMS_PRE_MAXSIZE: 1000
                 NMS_POST_MAXSIZE: 83
