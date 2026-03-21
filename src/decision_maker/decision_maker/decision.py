@@ -75,18 +75,27 @@ MISSION_RRT = 'rrt'
 
 
 
-# 동작 단계 요약
-# 1) lane_detect=True and num_lidar_cone!=0 -> 2-a, 아니면 2-b
-# 2-a) emergency=True  -> mission_state=emergency
-#      단, num_lidar_cone >= num_moon_course_threshold 이면 mission_state=moon_course
-#      emergency=False -> mission_state=moon_course
-#      * moon_course 진입 후에는 num_lidar_cone==0이 될 때까지 moon_course 유지
-#      * (유지 중에는 emergency=True여도 moon_course 유지)
-#      (감속 계획이 리셋되는 경우는 emergency 상태를 벗어날 때(decel_active=False로 바뀔 때))
-# 2-b) lane_detect=True -> mission_state=lane
-# 3)   num_lidar_cone==0 -> mission_state=gps
-# 4)   num_lidar_cone>=threshold -> mission_state=static_obstacle
-#      num_lidar_cone<threshold  -> mission_state=rrt
+# 동작 단계 요약 (위에서 아래로 우선순위 적용)
+# 1) num_lidar_cone == 0 인 경우 (문코스 홀딩 무조건 해제)
+#    - emergency=True -> mission_state=emergency
+#    - 아니면 lane_detect=True -> mission_state=lane
+#    - 모두 아니면 -> mission_state=gps
+# 
+# 2) num_lidar_cone > 0 인 경우
+#    2-a) 문코스 유지: 기존에 moon_course 진입 상태였다면 (moon_course_hold_active=True)
+#         -> emergency 여부와 무관하게 mission_state=moon_course 계속 유지
+#         * 유지 해제 조건: 콘이 0개가 될 때까지 (1번 단계에서 처리)
+#    2-b) 문코스 트리거: lane_detect=True and num_lidar_cone >= num_moon_course_threshold
+#         -> 홀딩 상태를 True로 켜고, mission_state=moon_course
+#    2-c) 긴급 정지: 문코스 홀딩 상태가 아니고, emergency=True
+#         -> mission_state=emergency
+#         * (감속 계획이 리셋되는 경우는 emergency 상태를 벗어날 때(decel_active=False로 바뀔 때))
+#    2-d) 차선 주행: 위 조건에 해당하지 않고 lane_detect=True
+#         -> mission_state=lane
+#    2-e) 정적 장애물: 차선이 없고 num_lidar_cone >= num_static_obstacle_threshold
+#         -> mission_state=static_obstacle
+#    2-f) RRT 회피: 차선이 없고 콘 개수가 정적 장애물 기준치 미만
+#         -> mission_state=rrt
 
 
 
@@ -492,16 +501,14 @@ class DecisionNode(Node):
             return MISSION_MOON_COURSE
 
         # 문코스 홀딩 X (if cone_count == 0:) and emergency O -> emergency
-        if self.moon_course_hold_active = False and self.emergency:
+        if self.moon_course_hold_active == False and self.emergency:
             return MISSION_EMERGENCY
 
-        
+        # 문코스 기준치 미만의 꼬깔이 있지만, 차선이 인식되는 경우
         if lane_on:
             return MISSION_LANE
 
-        if cone_count == 0:
-            return MISSION_GPS
-
+        # 남은 꼬깔 개수에 따라 장애물 회피 방식 결정
         if cone_count >= self.num_static_obstacle_threshold:
             return MISSION_STATIC_OBSTACLE
 
