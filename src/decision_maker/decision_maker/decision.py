@@ -486,18 +486,16 @@ class DecisionNode(Node):
         if self.moon_course_hold_active and (cone_count != 0):
             return MISSION_MOON_COURSE
 
-        if self.emergency:
-            # lane 구간에서 cone이 충분히 많으면 emergency보다 moon_course를 우선
-            if lane_on and (cone_count >= self.num_moon_course_threshold):
-                self.moon_course_hold_active = True
-                return MISSION_MOON_COURSE
-            return MISSION_EMERGENCY
-
-        # if lane_on and (cone_count != 0):
+        # *문코스 트리거
         if lane_on and (cone_count >= self.num_moon_course_threshold):
             self.moon_course_hold_active = True
             return MISSION_MOON_COURSE
 
+        # 문코스 홀딩 X (if cone_count == 0:) and emergency O -> emergency
+        if self.moon_course_hold_active = False and self.emergency:
+            return MISSION_EMERGENCY
+
+        
         if lane_on:
             return MISSION_LANE
 
