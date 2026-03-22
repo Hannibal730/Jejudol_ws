@@ -14,9 +14,9 @@ processed_dir = Path('/home/hannibal/Jejudol_ws/data')
 # 상대경로는 processed_dir 기준입니다.
 # -------------------------------------------------------------
 csv1 = 'Jeju_Map/1_5_map_easy.csv'
-csv2 = 'Jeju_Map/1_5_map_hard.csv'
-# csv3 = 'rosbag2_2026_02_11-17_59_36_lidar_gps_imu.csv'
-# csv4 = 'nocheon_2026_03_13-17_55_26.csv'
+csv2 = 'Jeju_Map/1_5_map_middle.csv'
+csv3 = 'Jeju_Map/1_5_map_middle2.csv'
+csv4 = 'Jeju_Map/1_5_map_hard.csv'
 # csv5 = 'Jeju_Map/1_5_map_easy_reverse.csv'
 # csv6 = 'Jeju_Map/1_5_map_middle2_reverse.csv'
 
