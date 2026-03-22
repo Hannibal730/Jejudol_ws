@@ -31,7 +31,8 @@ class MaRRTCautionPurePursuit(Node):
         self.declare_parameter('wheelbase', 0.724)
         
         self.declare_parameter('lookahead_distatnce_caution', 1.5)
-        self.declare_parameter('max_steer_deg', 36.0)
+        self.declare_parameter('max_steer_deg', 23.0)
+        self.declare_parameter('steer_gain', 1.2)
         self.declare_parameter('use_arc_length_lookahead', False)
         
         # velodyne가 후륜축보다 +x(전방)으로 있을 때, 후륜축의 velodyne 기준 좌표는 음수 x
@@ -41,11 +42,14 @@ class MaRRTCautionPurePursuit(Node):
         self.wheelbase = float(self.get_parameter('wheelbase').value)
         self.Ld = float(self.get_parameter('lookahead_distatnce_caution').value)
         self.max_steer_deg = float(self.get_parameter('max_steer_deg').value)
+        self.steer_gain = float(self.get_parameter('steer_gain').value)
         self.use_arc_length_lookahead = bool(self.get_parameter('use_arc_length_lookahead').value)
         self.rear_axle_x_in_velodyne = float(self.get_parameter('rear_axle_x_in_velodyne').value)
         self.rear_axle_y_in_velodyne = float(self.get_parameter('rear_axle_y_in_velodyne').value)
         if self.max_steer_deg <= 0.0:
             self.max_steer_deg = 23.0
+        if self.steer_gain <= 0.0:
+            self.steer_gain = 1.0
 
         # 차량의 현재 위치 (velodyne 좌표계, 후륜축 중심)
         self.vehicle_x = self.rear_axle_x_in_velodyne
@@ -226,7 +230,12 @@ class MaRRTCautionPurePursuit(Node):
         # 순수 추종 제어 계산
         alpha = math.atan2(lookahead_point[1], lookahead_point[0])
         steer_rad = math.atan2(2.0 * self.wheelbase * math.sin(alpha), Ld)
-        steer_deg = - math.degrees(steer_rad)
+        raw_steer_deg = - math.degrees(steer_rad)
+        gain_threshold_deg = self.max_steer_deg / 3.0
+        if abs(raw_steer_deg) > gain_threshold_deg:
+            steer_deg = raw_steer_deg * self.steer_gain
+        else:
+            steer_deg = raw_steer_deg
         steer_deg = max(-self.max_steer_deg, min(self.max_steer_deg, steer_deg))
         self.get_logger().info(
             f'Caution Pure Pursuit: Ld={Ld:.2f}m, Lookahead=({lookahead_point[0]:.2f}, {lookahead_point[1]:.2f}), '
