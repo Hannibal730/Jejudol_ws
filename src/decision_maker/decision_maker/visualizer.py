@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, Int8, String
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 
 
 class DecisionVisualizerNode(Node):
@@ -45,7 +45,7 @@ class DecisionVisualizerNode(Node):
         self.create_subscription(Int8, '/vn/num_lidar_cone', self._num_lidar_cone_cb, 10)
         self.create_subscription(Bool, '/emergency', self._emergency_cb, 10)
 
-        self.marker_pub = self.create_publisher(Marker, '/decision/text_marker', 10)
+        self.marker_pub = self.create_publisher(MarkerArray, '/decision/text_marker', 10)
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._on_timer)
 
         self.get_logger().info(
@@ -122,31 +122,31 @@ class DecisionVisualizerNode(Node):
         lane_detect_marker = self._make_text_marker(
             marker_id=3,
             text=f'/lane_detect: {"true" if self.lane_detected else "false"}',
-            x_offset=2.0 * self.y_step,
-            y_offset=self.y_step,
+            x_offset=3.0 * self.y_step,
             color_rgb=(0.9, 0.9, 0.2),
         )
         cone_marker = self._make_text_marker(
             marker_id=4,
             text=f'/vn/num_lidar_cone: {self.num_lidar_cone}',
-            x_offset=2.0 * self.y_step,
-            y_offset=2.0 * self.y_step,
+            x_offset=4.0 * self.y_step,
             color_rgb=(1.0, 0.6, 0.2),
         )
         emergency_marker = self._make_text_marker(
             marker_id=5,
             text=f'/emergency: {"true" if self.is_emergency else "false"}',
-            x_offset=2.0 * self.y_step,
-            y_offset=3.0 * self.y_step,
+            x_offset=5.0 * self.y_step,
             color_rgb=(1.0, 0.2, 0.2),
         )
-
-        self.marker_pub.publish(mission_marker)
-        self.marker_pub.publish(throttle_marker)
-        self.marker_pub.publish(steer_marker)
-        self.marker_pub.publish(lane_detect_marker)
-        self.marker_pub.publish(cone_marker)
-        self.marker_pub.publish(emergency_marker)
+        marker_array = MarkerArray()
+        marker_array.markers = [
+            mission_marker,
+            throttle_marker,
+            steer_marker,
+            lane_detect_marker,
+            cone_marker,
+            emergency_marker,
+        ]
+        self.marker_pub.publish(marker_array)
 
 
 def main(args=None):
