@@ -1,4 +1,4 @@
-================기본 세팅================
+================빽 녹화 세팅================
 
 1. RTK 마운트 포인트 수정
 src/RTK_GPS_NTRIP/ntrip_client/launch/ntrip_client_launch.py 에서 DeclareLaunchArgument('mountpoint', default_value='SUWN-RTCM31')
@@ -15,12 +15,17 @@ ros2 bag record /f9r/fix
 src/utm_tf/src/f9r_to_csv.py 에서 백파일 경로 지정하고 실행하여 csv 맵을 data폴더에 저장
 src/utm_tf/config/tf_gps_csv.yaml 에서 새로 저장한 csv맵으로 지정.
 
-================노드 세팅================
+================대회 세팅================
 
 ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video2" -p pixel_format:="mjpeg2rgb"
 (비디오 번호는 0 또는 2)
 ros2 run rqt_image_view rqt_image_view
 ros2 run yolotl_ros2 main5
+
+ros2 launch ublox_gps ublox_f9p_launch.py
+ros2 launch ublox_gps ublox_f9r_launch.py
+ros2 run fix2nmea fix2nmea
+ros2 launch ntrip_client ntrip_client_launch.py
 
 ros2 launch ublox_gps ublox_f9p_launch.py
 ros2 launch ublox_gps ublox_f9r_launch.py
@@ -69,13 +74,8 @@ ros2 topic echo /f9p/navpvt --field num_sv, .../f9r/navpvt --field num_sv
 
 ros2 bag record <topic_name_1> <topic_name_2> ...
 ros2 bag record /image_raw/compressed /velodyne_points /f9r/fix /f9p/fix
-ros2 bag record /image_raw/compressed --compression-format zstd --compression-mode file
-
-
-
-(imu 사용 안 함. ros2 launch myahrs_ros2_driver myahrs_ros2_driver.launch.py)
-
 ros2 run tf2_tools view_frames
 
 
 /home/hannibal/Jejudol_ws/src/voxelnext_ros2/tools/cfgs/nuscenes_models/cbgs_voxel0075_voxelnext.yaml
+/home/hannibal/Jejudol_ws/data/nocheon_2026_03_13-17_55_26.csv (연습했던 노천극장 빽)
