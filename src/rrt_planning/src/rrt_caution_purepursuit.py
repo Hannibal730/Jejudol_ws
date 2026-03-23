@@ -91,7 +91,7 @@ class MaRRTCautionPurePursuit(Node):
             self.get_logger().warning('보간할 웨이포인트 개수가 부족합니다.')
             return
 
-        self.get_logger().info(f'보간을 위해 {len(waypoints)}개의 웨이포인트를 수신했습니다.')
+        # self.get_logger().info(f'보간을 위해 {len(waypoints)}개의 웨이포인트를 수신했습니다.')
 
         # numpy 배열로 변환
         waypoints_np = np.array(waypoints)
@@ -128,7 +128,7 @@ class MaRRTCautionPurePursuit(Node):
         x_eq, y_eq = splev(u_equally, tck)
         self.control_points = list(zip(x_eq, y_eq))
 
-        self.get_logger().info(f'B-spline 보간으로 {len(self.control_points)}개의 제어점을 생성했습니다.')
+        # self.get_logger().info(f'B-spline 보간으로 {len(self.control_points)}개의 제어점을 생성했습니다.')
 
         # 생성된 등간격 웨이포인트들을 Path 메시지로 publish (RViz 시각화용)
         final_path = Path()
@@ -237,10 +237,10 @@ class MaRRTCautionPurePursuit(Node):
         else:
             steer_deg = raw_steer_deg
         steer_deg = max(-self.max_steer_deg, min(self.max_steer_deg, steer_deg))
-        self.get_logger().info(
-            f'Caution Pure Pursuit: Ld={Ld:.2f}m, Lookahead=({lookahead_point[0]:.2f}, {lookahead_point[1]:.2f}), '
-            f'alpha={math.degrees(alpha):.2f} deg, steer={steer_deg:.2f} deg ({steer_rad:.3f} rad)'
-        )
+        # self.get_logger().info(
+        #     f'Caution Pure Pursuit: Ld={Ld:.2f}m, Lookahead=({lookahead_point[0]:.2f}, {lookahead_point[1]:.2f}), '
+        #     f'alpha={math.degrees(alpha):.2f} deg, steer={steer_deg:.2f} deg ({steer_rad:.3f} rad)'
+        # )
 
         # 조향각을 std_msgs/Float32 메시지로 publish (deg 단위)
         angle_msg = Float32()

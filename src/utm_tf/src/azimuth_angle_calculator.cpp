@@ -102,9 +102,9 @@ private:
         yaw_msg.data = bearing_deg;
         yaw_publisher_->publish(yaw_msg);
         // ROS time + azimuth angle만 간단히 출력합니다.
-        const double ros_time_sec = this->get_clock()->now().seconds();
-        std::printf("[%.9f] Azimuth_Angle: %.2f°\n", ros_time_sec, bearing_deg);
-        std::fflush(stdout);
+        // const double ros_time_sec = this->get_clock()->now().seconds();
+        // std::printf("[%.9f] Azimuth_Angle: %.2f°\n", ros_time_sec, bearing_deg);
+        // std::fflush(stdout);
 
         // 한 번 계산에 사용된 데이터는 초기화하여 중복 계산 방지
         gps1_fix_ = nullptr;
