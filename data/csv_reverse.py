@@ -1,6 +1,6 @@
 from pathlib import Path
 
-in_path = Path("/home/hannibal/Jejudol_ws/data/Jeju_Map/1_5_map_middle2.csv")
+in_path = Path("/home/hannibal/Jejudol_ws/data/Jeju_Map/최종)2026 국제 E-mobility 전시회_1_5 자율주행 레이싱 대회 경로.csv")
 
 # 출력 파일명: 기존 이름 뒤에 _reverse 붙이기
 if in_path.suffix.lower() == ".csv":
