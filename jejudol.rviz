@@ -8,24 +8,22 @@ Panels:
         - /Axes1
         - /Marker1
         - /MarkerArray1
-        - /MarkerArray2
         - /TF1
         - /Marker2
         - /Marker3
         - /Marker4
-        - /Marker4/Topic1
         - /Marker5
+        - /MarkerArray2
         - /MarkerArray3
         - /MarkerArray4
         - /MarkerArray5
         - /MarkerArray6
         - /MarkerArray7
         - /MarkerArray8
-        - /MarkerArray9
         - /Marker6
         - /Marker7
       Splitter Ratio: 0.5
-    Tree Height: 349
+    Tree Height: 1197
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -43,7 +41,7 @@ Panels:
     Experimental: true
     Name: Time
     SyncMode: 0
-    SyncSource: PointCloud2
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -110,7 +108,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        detected_roi: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -123,7 +121,7 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        detected_center: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -131,44 +129,18 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /vn/lidar_cone
       Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: false
-      Name: MarkerArray
-      Namespaces:
-        {}
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /vn/detected_class
-      Value: false
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        csv:
-          Value: true
-        f9p:
-          Value: true
-        f9r:
-          Value: true
-        velodyne:
-          Value: true
       Marker Scale: 1
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
       Tree:
-        csv:
-          f9p:
-            {}
-          f9r:
-            {}
-          velodyne:
-            {}
+        {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -203,7 +175,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        azimuth_angle_text: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -216,7 +188,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        f9r_roi: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -229,7 +201,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        f9r_roi_end: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -255,7 +227,7 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        obstacle_radius: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -267,20 +239,19 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        publishDelaunayLinesVisual: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /rrt/delauny_triangles
+        Value: /rrt/delaunay_triangles
       Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        rrt: true
-        rrt-leaves: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -304,7 +275,7 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        publishBestBranchVisual: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -316,8 +287,7 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        new-publishWaypointsVisuals: true
-        saved-publishWaypointsVisuals: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -329,7 +299,7 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        rrt_target: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -341,7 +311,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        lookahead: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -354,7 +324,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        caution_lookahead: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -367,7 +337,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        decision_text: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -422,25 +392,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 30.249486923217773
+      Distance: 52.98527908325195
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 6.614821910858154
-        Y: 0.018758360296487808
-        Z: 0.172543004155159
+        X: 0
+        Y: 0
+        Z: 0
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5497963428497314
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.077208995819092
+      Yaw: 1.5453975200653076
     Saved: ~
 Window Geometry:
   Displays:

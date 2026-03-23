@@ -50,16 +50,16 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('rrt_cone_obstacle_radius', 0.4)
         self.declare_parameter('rrt_target_radius', 0.3)
         self.declare_parameter('rrt_cone_fallback_min_dist', 6.0)
-        self.declare_parameter('rrt_iteration_count', 50)
-        self.declare_parameter('rrt_plan_distance', 3.6)
         
-        self.declare_parameter('rrt_expand_distance', 0.7)
+        self.declare_parameter('rrt_iteration_count', 100)
+        self.declare_parameter('rrt_plan_distance', 5.4)
+        self.declare_parameter('rrt_expand_distance', 0.6)
         self.declare_parameter('rrt_expand_angle_deg', 22.0)
         
         self.declare_parameter('rrt_waypoint_max_accepted_edge_length', 7.0)
         self.declare_parameter('rrt_waypoint_max_edge_parts_ratio', 3.0)
         self.declare_parameter('rrt_merge_max_dist_to_save_waypoint', 2.0)
-        self.declare_parameter('rrt_merge_max_waypoint_save_count', 2)
+        self.declare_parameter('rrt_merge_max_waypoint_save_count', 4)
         self.declare_parameter('rrt_merge_waypoint_dist_tolerance', 1000.0)
         self.declare_parameter('rrt_saved_waypoint_preloop_threshold', 15)
         self.declare_parameter('rrt_filter_dist_change_limit', 2.0)
@@ -173,7 +173,7 @@ class MaRRTPathPlanNode(Node):
         self.treeVisualPub = self.create_publisher(MarkerArray, '/rrt/tree_branch', 10)
         self.bestBranchVisualPub = self.create_publisher(MarkerArray, '/rrt/best_tree_branch', 10)
         self.filteredBranchVisualPub = self.create_publisher(MarkerArray, '/rrt/filtered_tree_branch', 10)
-        self.delaunayLinesVisualPub = self.create_publisher(MarkerArray, '/rrt/delauny_triangles', 10)
+        self.delaunayLinesVisualPub = self.create_publisher(MarkerArray, '/rrt/delaunay_triangles', 10)
         self.waypointsVisualPub = self.create_publisher(MarkerArray, '/rrt/waypoints', 10)
         self.obstacleVisualPub = self.create_publisher(MarkerArray, '/rrt/obstacle_radius', 10)
         self.rrtTargetVisualPub = self.create_publisher(MarkerArray, self.rrt_target_visual_topic, 10)
@@ -647,9 +647,9 @@ class MaRRTPathPlanNode(Node):
         savedWaypointsMarker.type = savedWaypointsMarker.SPHERE_LIST
         savedWaypointsMarker.action = savedWaypointsMarker.ADD
         savedWaypointsMarker.pose.orientation.w = 1.0
-        savedWaypointsMarker.scale.x = 0.25
-        savedWaypointsMarker.scale.y = 0.25
-        savedWaypointsMarker.scale.z = 0.25
+        savedWaypointsMarker.scale.x = 0.15
+        savedWaypointsMarker.scale.y = 0.15
+        savedWaypointsMarker.scale.z = 0.15
 
         savedWaypointsMarker.color.a = 1.0
         savedWaypointsMarker.color.r = 0.0
@@ -673,9 +673,9 @@ class MaRRTPathPlanNode(Node):
             newWaypointsMarker.type = newWaypointsMarker.SPHERE_LIST
             newWaypointsMarker.action = newWaypointsMarker.ADD
             newWaypointsMarker.pose.orientation.w = 1.0
-            newWaypointsMarker.scale.x = 0.15
-            newWaypointsMarker.scale.y = 0.15
-            newWaypointsMarker.scale.z = 0.15
+            newWaypointsMarker.scale.x = 0.25
+            newWaypointsMarker.scale.y = 0.25
+            newWaypointsMarker.scale.z = 0.25
 
             newWaypointsMarker.color.a = 1.0
             newWaypointsMarker.color.r = 0.0
@@ -755,16 +755,13 @@ class MaRRTPathPlanNode(Node):
         marker.header.stamp = self._now()
         marker.lifetime = self._duration(1)
         marker.ns = "publishDelaunayLinesVisual"
-
         marker.type = marker.LINE_LIST
         marker.action = marker.ADD
-        marker.scale.x = 0.035
-
+        marker.scale.x = 0.03
         marker.pose.orientation.w = 1.0
-
-        marker.color.a = 0.8
+        marker.color.a = 0.3
         marker.color.r = 1.0
-        marker.color.b = 1.0
+        marker.color.g = 1.0
 
         for edge in edges:
             # print edge
@@ -861,15 +858,14 @@ class MaRRTPathPlanNode(Node):
         marker.header.stamp = self._now()
         marker.lifetime = self._duration(0.2)
         marker.ns = "publishBestBranchVisual"
-
         marker.type = marker.LINE_LIST
         marker.action = marker.ADD
-        marker.scale.x = 0.2
-
+        marker.scale.x = 0.775
         marker.pose.orientation.w = 1.0
-
-        marker.color.a = 1.0
-        marker.color.r = 1.0
+        marker.color.a = 0.7
+        marker.color.r = 0.0
+        marker.color.g = 122.0 / 255.0
+        marker.color.b = 204.0 / 255.0
 
         node = leafNode
 
@@ -896,14 +892,11 @@ class MaRRTPathPlanNode(Node):
         marker.header.frame_id = self.world_frame
         marker.header.stamp = self._now()
         marker.lifetime = self._duration(0.2)
-        marker.ns = "publisshFilteredBranchVisual"
-
+        marker.ns = "publishFilteredBranchVisual"
         marker.type = marker.LINE_LIST
         marker.action = marker.ADD
         marker.scale.x = 0.07
-
         marker.pose.orientation.w = 1.0
-
         marker.color.a = 1.0
         marker.color.b = 1.0
 
@@ -934,13 +927,11 @@ class MaRRTPathPlanNode(Node):
         treeMarker.type = treeMarker.LINE_LIST
         treeMarker.action = treeMarker.ADD
         treeMarker.scale.x = 0.03
-
         treeMarker.pose.orientation.w = 1.0
-
-        treeMarker.color.a = 1.0
-        treeMarker.color.r = 1.0
-        treeMarker.color.g = 1.0
-        treeMarker.color.b = 1.0
+        treeMarker.color.a = 0.9
+        treeMarker.color.r = 0.0
+        treeMarker.color.g = 122.0 / 255.0
+        treeMarker.color.b = 204.0 / 255.0
 
         treeMarker.lifetime = self._duration(0.2)
 
@@ -964,12 +955,14 @@ class MaRRTPathPlanNode(Node):
         leavesMarker.type = leavesMarker.SPHERE_LIST
         leavesMarker.action = leavesMarker.ADD
         leavesMarker.pose.orientation.w = 1.0
-        leavesMarker.scale.x = 0.15
-        leavesMarker.scale.y = 0.15
-        leavesMarker.scale.z = 0.15
+        leavesMarker.scale.x = 0.05
+        leavesMarker.scale.y = 0.05
+        leavesMarker.scale.z = 0.05
 
-        leavesMarker.color.a = 1.0
-        leavesMarker.color.b = 0.1
+        leavesMarker.color.a = 0.7
+        leavesMarker.color.r = 0.0
+        leavesMarker.color.g = 122.0 / 255.0
+        leavesMarker.color.b = 204.0 / 255.0
 
         for node in leafNodes:
             p = self._point(node.x, node.y, 0.0)
