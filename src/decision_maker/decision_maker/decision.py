@@ -50,11 +50,11 @@ DEFAULTS = {
     'auto_throttle_moon_course': 0.1,
     
     # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_caution_purepursuit.py'    
-    'num_static_obstacle_threshold': 5,
+    'num_static_obstacle_threshold': 8,
     'auto_throttle_static_obstacle': 0.3,
     
     # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_purepursuit.py'        
-    'auto_throttle_rrt_min': 0.2,
+    'auto_throttle_rrt_min': 0.3,
     'auto_throttle_rrt_max': 0.6,
     
     # 조향각: '/home/hannibal/Jejudol_ws/src/gps_planning/scripts/gps_purepursuit.py'

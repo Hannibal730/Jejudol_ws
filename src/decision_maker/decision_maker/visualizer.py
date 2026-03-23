@@ -101,41 +101,52 @@ class DecisionVisualizerNode(Node):
         return marker
 
     def _on_timer(self):
+        mission_colors = {
+            'emergency': (1.0, 0.0, 0.0),
+            'moon_course': (1.0, 0.5, 0.0),
+            'static_obstacle': (1.0, 0.5, 0.0),
+            'lane': (0.0, 1.0, 0.0),
+            'rrt': (0.0, 0.0, 1.0),
+            'gps': (1.0, 1.0, 1.0),
+        }
+        mission_color = mission_colors.get(self.mission_state, (1.0, 1.0, 1.0))
         mission_marker = self._make_text_marker(
             marker_id=0,
             text=f'mission_state: {self.mission_state}',
             x_offset=0.0,
-            color_rgb=(1.0, 1.0, 0.0),
+            color_rgb=mission_color,
         )
         throttle_marker = self._make_text_marker(
             marker_id=1,
             text=f'/auto_throttle: {self.auto_throttle:.3f}',
             x_offset=self.y_step,
-            color_rgb=(0.0, 1.0, 0.0),
+            color_rgb=(1.0, 1.0, 1.0),
         )
         steer_marker = self._make_text_marker(
             marker_id=2,
             text=f'/auto_steer_angle: {self.auto_steer_angle:.3f}',
             x_offset=2.0 * self.y_step,
-            color_rgb=(0.2, 0.8, 1.0),
+            color_rgb=(1.0, 1.0, 1.0),
         )
+        lane_color = (0.0, 1.0, 0.0) if self.lane_detected else (1.0, 1.0, 1.0)
         lane_detect_marker = self._make_text_marker(
             marker_id=3,
             text=f'/lane_detect: {"true" if self.lane_detected else "false"}',
             x_offset=3.0 * self.y_step,
-            color_rgb=(0.9, 0.9, 0.2),
+            color_rgb=lane_color,
         )
         cone_marker = self._make_text_marker(
             marker_id=4,
             text=f'/vn/num_lidar_cone: {self.num_lidar_cone}',
             x_offset=4.0 * self.y_step,
-            color_rgb=(1.0, 0.6, 0.2),
+            color_rgb=(1.0, 1.0, 1.0),
         )
+        emergency_color = (1.0, 0.0, 0.0) if self.is_emergency else (1.0, 1.0, 1.0)
         emergency_marker = self._make_text_marker(
             marker_id=5,
             text=f'/emergency: {"true" if self.is_emergency else "false"}',
             x_offset=5.0 * self.y_step,
-            color_rgb=(1.0, 0.2, 0.2),
+            color_rgb=emergency_color,
         )
         marker_array = MarkerArray()
         marker_array.markers = [
