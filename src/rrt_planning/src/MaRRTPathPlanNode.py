@@ -51,8 +51,8 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('rrt_target_radius', 0.3)
         self.declare_parameter('rrt_cone_fallback_min_dist', 6.0)
         
-        self.declare_parameter('rrt_iteration_count', 100)
-        self.declare_parameter('rrt_plan_distance', 5.4)
+        self.declare_parameter('rrt_iteration_count', 40)
+        self.declare_parameter('rrt_plan_distance', 4.8)
         self.declare_parameter('rrt_expand_distance', 0.6)
         self.declare_parameter('rrt_expand_angle_deg', 22.0)
         
@@ -365,10 +365,9 @@ class MaRRTPathPlanNode(Node):
         self.coneObstacleList = [(cone.x, cone.y, coneObstacleSize) for cone in frontCones]
 
         obstacleList = self.coneObstacleList
-        
-        self.get_logger().info(
-            f'obstacles: cones={len(self.coneObstacleList)}'
-        )
+        # self.get_logger().info(
+        #     f'obstacles: cones={len(self.coneObstacleList)}'
+        # )
         
         # 병합된 장애물들에 대한 시각화 메시지 퍼블리시
         self.publishObstacleVisuals(obstacleList)
@@ -383,10 +382,10 @@ class MaRRTPathPlanNode(Node):
         if roi_target is not None:
             self.rrt_target = roi_target
             rrtTarget.append((roi_target.x, roi_target.y, targetRadius))
-            self.get_logger().info(
-                f'[RRT target] f9r_roi_end frame={self.world_frame} '
-                f'pos=({roi_target.x:.2f}, {roi_target.y:.2f})'
-            )
+            # self.get_logger().info(
+            #     f'[RRT target] f9r_roi_end frame={self.world_frame} '
+            #     f'pos=({roi_target.x:.2f}, {roi_target.y:.2f})'
+            # )
 
         # ROI 목표를 사용할 수 없고 fallback 허용 시 멀리 있는 콘들을 목표점으로 사용
         elif self.allow_cone_fallback_target:
@@ -566,16 +565,18 @@ class MaRRTPathPlanNode(Node):
         return waypoints
 
     def getDelaunayEdges(self, frontCones):
-        if len(frontCones) < 4:
-            return
+        if len(frontCones) < 3:
+            return []
 
         conePoints = np.zeros((len(frontCones), 2))
 
         for i in range(len(frontCones)):
             cone = frontCones[i]
             conePoints[i] = ([cone.x, cone.y])
-
-        tri = Delaunay(conePoints)
+        try:
+            tri = Delaunay(conePoints)
+        except Exception:
+            return []
 
         delaunayEdges = []
         for simp in tri.simplices:
