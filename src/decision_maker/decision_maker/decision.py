@@ -234,6 +234,7 @@ class DecisionNode(Node):
         self.auto_steer_pub = self.create_publisher(Float32, '/auto_steer_angle', 10)
         self.auto_throttle_pub = self.create_publisher(Float32, '/auto_throttle', 10)
         self.mission_state_pub = self.create_publisher(String, '/mission_state', 10)
+        self.moon_course_hold_pub = self.create_publisher(Bool, '/moon_course_hold', 10)
 
         self._start_manual_stop_listener()
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._on_timer)
@@ -662,6 +663,10 @@ class DecisionNode(Node):
         mission_msg = String()
         mission_msg.data = self.current_mission_state
         self.mission_state_pub.publish(mission_msg)
+
+        moon_course_hold_msg = Bool()
+        moon_course_hold_msg.data = bool(self.moon_course_hold)
+        self.moon_course_hold_pub.publish(moon_course_hold_msg)
 
         self._maybe_log_status(steer_cmd, throttle_cmd)
 

@@ -37,6 +37,7 @@ class DecisionVisualizerNode(Node):
         self.lane_detected = False
         self.num_lidar_cone = 0
         self.is_emergency = False
+        self.moon_course_hold = False
 
         self.create_subscription(String, '/mission_state', self._mission_state_cb, 10)
         self.create_subscription(Float32, '/auto_throttle', self._throttle_cb, 10)
@@ -44,6 +45,7 @@ class DecisionVisualizerNode(Node):
         self.create_subscription(Bool, '/lane_detect', self._lane_detect_cb, 10)
         self.create_subscription(Int8, '/vn/num_lidar_cone', self._num_lidar_cone_cb, 10)
         self.create_subscription(Bool, '/emergency', self._emergency_cb, 10)
+        self.create_subscription(Bool, '/moon_course_hold', self._moon_course_hold_cb, 10)
 
         self.marker_pub = self.create_publisher(MarkerArray, '/decision/text_marker', 10)
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._on_timer)
@@ -67,6 +69,9 @@ class DecisionVisualizerNode(Node):
 
     def _num_lidar_cone_cb(self, msg: Int8):
         self.num_lidar_cone = int(msg.data)
+
+    def _moon_course_hold_cb(self, msg: Bool):
+        self.moon_course_hold = bool(msg.data)
 
     def _emergency_cb(self, msg: Bool):
         self.is_emergency = bool(msg.data)
@@ -141,11 +146,18 @@ class DecisionVisualizerNode(Node):
             x_offset=4.0 * self.y_step,
             color_rgb=(1.0, 1.0, 1.0),
         )
-        emergency_color = (1.0, 0.0, 0.0) if self.is_emergency else (1.0, 1.0, 1.0)
-        emergency_marker = self._make_text_marker(
+        moon_course_hold_color = (0.0, 1.0, 0.0) if self.moon_course_hold else (1.0, 1.0, 1.0)
+        moon_course_hold_marker = self._make_text_marker(
             marker_id=5,
-            text=f'/emergency: {"true" if self.is_emergency else "false"}',
+            text=f'/moon_course_hold: {"true" if self.moon_course_hold else "false"}',
             x_offset=5.0 * self.y_step,
+            color_rgb=moon_course_hold_color,
+        )
+        emergency_color = (0.0, 1.0, 0.0) if self.is_emergency else (1.0, 1.0, 1.0)
+        emergency_marker = self._make_text_marker(
+            marker_id=6,
+            text=f'/emergency: {"true" if self.is_emergency else "false"}',
+            x_offset=6.0 * self.y_step,
             color_rgb=emergency_color,
         )
         marker_array = MarkerArray()
@@ -156,6 +168,7 @@ class DecisionVisualizerNode(Node):
             lane_detect_marker,
             cone_marker,
             emergency_marker,
+            moon_course_hold_marker,
         ]
         self.marker_pub.publish(marker_array)
 
