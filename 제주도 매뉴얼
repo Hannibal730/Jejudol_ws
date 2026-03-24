@@ -37,9 +37,10 @@ ros2 run dynamic_cone dynamic_cone
 
 ros2 run rrt_planning main.py
 ros2 run rrt_planning rrt_purepursuit.py
-ros2 run rrt_planning rrt_caution_purepursuit.py
+ros2 run rrt_planning rrt_caution_purepursuit
 
-ros2 run decision_maker decision
+ros2 run decision_maker decision (문코스, 정적장애물 포함)
+ros2 run decision_maker decision3 (문코스, 정적장애물 미포함)
 ros2 run decision_maker visualizer
 ros2 run serial_bridge serial_bridge --ros-args -p port:=/dev/arduino_bridge
 
