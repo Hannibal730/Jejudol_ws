@@ -56,12 +56,12 @@ class BEVYAutoSetupNode(Node):
         print("3. 이제 원본 영상 바깥 여백도 클릭 가능합니다.")
         print("4. 저장되는 좌표는 '원본 영상 기준 좌표'입니다.")
         print("   (즉, 여백을 클릭하면 음수 또는 원본 크기보다 큰 좌표가 저장될 수 있습니다.)")
-        print("5. 's' 키: 저장 후 종료 / 'r' 키: 리셋 / 'q' 키: 취소\n")
+        print("5. 's' 키: 저장 후 종료 / 'r' 키: 마지막 점 취소 / 'q' 키: 종료\n")
 
     def mouse_callback(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
             if len(self.src_points) >= self.max_points:
-                print("[WARNING] 이미 4개의 점이 선택되었습니다. 'r'을 눌러 리셋하세요.")
+                print("[WARNING] 이미 4개의 점이 선택되었습니다. 'r'을 눌러 마지막 점을 취소하세요.")
                 return
 
             # 캔버스 좌표 -> 원본 영상 좌표
@@ -90,7 +90,7 @@ class BEVYAutoSetupNode(Node):
             print(f"[INFO] Added {point_order[current_point_index]} point: {final_point} ({len(self.src_points)}/{self.max_points}){outside_msg}")
 
             if len(self.src_points) == self.max_points:
-                print("[INFO] 모든 점 선택 완료. 's'를 눌러 저장하거나 'r'로 리셋하세요.")
+                print("[INFO] 모든 점 선택 완료. 's'를 눌러 저장하거나 'r'로 마지막 점을 취소하세요.")
 
     def image_callback(self, msg):
         try:
@@ -222,8 +222,11 @@ class BEVYAutoSetupNode(Node):
                 rclpy.shutdown()
 
             elif key == ord('r'):
-                self.src_points = []
-                print("[INFO] 점 선택이 리셋되었습니다.")
+                if len(self.src_points) > 0:
+                    self.src_points.pop()
+                    print(f"[INFO] 마지막 점이 취소되었습니다. 현재 선택된 점 수: {len(self.src_points)}/{self.max_points}")
+                else:
+                    print("[INFO] 취소할 점이 없습니다.")
 
             elif key == ord('s'):
                 if len(self.src_points) < 4:
