@@ -17,6 +17,7 @@ src/utm_tf/config/tf_gps_csv.yaml 에서 새로 저장한 csv맵으로 지정.
 
 ================대회 세팅================
 
+
 ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video2" -p pixel_format:="mjpeg2rgb"
 (비디오 번호는 0 또는 2)
 ros2 run rqt_image_view rqt_image_view
