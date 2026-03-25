@@ -375,7 +375,7 @@ class LaneFollowerNode(Node):
             self.use_undistort = False
 
         # 3. 주행 파라미터
-        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0036, 1.23, 0.0037
+        self.m_per_pixel_y, self.y_offset_m, self.m_per_pixel_x = 0.0027, 1.23, 0.0030 #299 #193
 
         self.tracked_lanes = {
             'left': {'xs': None, 'ys': None, 'age': 0},
@@ -389,8 +389,8 @@ class LaneFollowerNode(Node):
         self.THROTTLE_MIN_FOR_LD, self.THROTTLE_MAX_FOR_LD = 0.4,0.8
         self.current_throttle = self.THROTTLE_MIN_FOR_LD
 
-        self.MIN_LOOKAHEAD_DISTANCE = 2.0
-        self.MAX_LOOKAHEAD_DISTANCE = 2.5
+        self.MIN_LOOKAHEAD_DISTANCE = 2.3
+        self.MAX_LOOKAHEAD_DISTANCE = 2.8
         self.MAX_STEER_DEG = 23.0
         self.prev_steer_deg = 0.0
         self.MAX_STEER_RATE = 12.0
@@ -480,7 +480,7 @@ class LaneFollowerNode(Node):
         )
         draw_img = image.copy()
 
-        LANE_WIDTH_M = 1.7
+        LANE_WIDTH_M = 1.6
         lane_width_pixels = LANE_WIDTH_M / self.m_per_pixel_x
 
         viz_left_xs, viz_left_ys = left_xs, left_ys
