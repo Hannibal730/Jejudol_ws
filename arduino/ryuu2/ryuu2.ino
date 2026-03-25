@@ -16,14 +16,18 @@
 
 #define POT_MAX 843
 #define POT_MIN 143
-#define MAX_STEER_TIRE_DEG 20
+#define MAX_STEER_TIRE_DEG 22
 
-#define KP 0.3
-#define KI 0.0005
-#define KD 0.004
-#define PID_DEADBAND 0.07
-// 조향 속도 미세 상향: 기존 실질 최대 50% -> 60%
-#define STEER_PWM_GAIN 0.80
+// 오차 기반 Kp 스케줄(1차 공격 튜닝): 작은 오차는 안정, 큰 오차는 민첩
+#define KP_NEAR 0.30
+#define KP_FAR 0.70
+#define KP_NEAR_ERR_DEG 1.5
+#define KP_FAR_ERR_DEG 6.0
+#define KI 0.0
+#define KD 0.0
+#define PID_DEADBAND 0.05
+// 조향 속도 상향: 급커브 대응을 위해 조향 최대 PWM 확장
+#define STEER_PWM_GAIN 0.85
 // 조향 각속도 로그용 저역통과필터(0~1, 클수록 반응 빠름)
 #define STEER_RATE_LPF_ALPHA 0.25
 
@@ -135,6 +139,14 @@ static inline double applyDeadband(double x, double band) {
   return (fabs(x) < band) ? 0.0 : x;
 }
 
+static inline double ScheduledKp(double err_abs_deg) {
+  if (err_abs_deg <= KP_NEAR_ERR_DEG) return KP_NEAR;
+  if (err_abs_deg >= KP_FAR_ERR_DEG) return KP_FAR;
+
+  double t = (err_abs_deg - KP_NEAR_ERR_DEG) / (KP_FAR_ERR_DEG - KP_NEAR_ERR_DEG);
+  return KP_NEAR + (KP_FAR - KP_NEAR) * t;
+}
+
 const unsigned int DIR_DEADTIME_US = 200;
 int last_dir_sign = 0;
 
@@ -232,7 +244,7 @@ void encoderISR() {
   }
 }
 
-double PID(double ref, double sense, unsigned long dt_us) {
+double PID(double ref, double sense, unsigned long dt_us, double kp_use) {
   static double prev_err = 0.0;
   static double integral = 0.0;
 
@@ -242,7 +254,7 @@ double PID(double ref, double sense, unsigned long dt_us) {
   double err = ref - sense;
   integral += err * dt_s;
 
-  double P = KP * err;
+  double P = kp_use * err;
   double I = KI * integral;
   double D = KD * (err - prev_err) / dt_s;
 
@@ -418,21 +430,28 @@ void loop() {
 // ===== 조향 PID: 모드에 따라 1번만 계산 (섞임 방지) =====
 double u_rc = 0.0;
 double u_auto = 0.0;
+double kp_rc = KP_NEAR;
+double kp_auto = KP_NEAR;
 
 if (Mode_val == AUTO_MODE && sa_ok) {
   // AUTO: SA 기반 PID
-  u_auto = PID((double)steer_auto_deg, deg, dt_us);
+  double err_auto = (double)steer_auto_deg - deg;
+  kp_auto = ScheduledKp(fabs(err_auto));
+  u_auto = PID((double)steer_auto_deg, deg, dt_us, kp_auto);
   u_auto = applyDeadband(u_auto, PID_DEADBAND);
   u_auto = constrain(u_auto, -1.0, 1.0);
 } else {
   // MANUAL 또는 SA 끊김: RC 기반 PID
-  u_rc = PID(ref_steer_deg_rc, deg, dt_us);
+  double err_rc = ref_steer_deg_rc - deg;
+  kp_rc = ScheduledKp(fabs(err_rc));
+  u_rc = PID(ref_steer_deg_rc, deg, dt_us, kp_rc);
   u_rc = applyDeadband(u_rc, PID_DEADBAND);
   u_rc = constrain(u_rc, -1.0, 1.0);
 }
 
 // 디버그/제어에 쓸 현재 조향 출력
 double u_used = (Mode_val == AUTO_MODE && sa_ok) ? u_auto : u_rc;
+double kp_used = (Mode_val == AUTO_MODE && sa_ok) ? kp_auto : kp_rc;
 
   if (Mode_val == BREAK_MODE) {
   StopMotor();
@@ -466,6 +485,7 @@ Serial.print(" | Tgt:"); Serial.print(ref_steer_deg, 1);
 Serial.print(" | Cur:"); Serial.print(deg, 1);
 Serial.print(" | dDeg/s:"); Serial.print(steer_rate_dps, 1);
 Serial.print(" | PID:"); Serial.print(u_used, 2);
+Serial.print(" | Kp:"); Serial.print(kp_used, 2);
 Serial.print(" | POT:"); Serial.print(POTval);
 Serial.print(" | ENC:"); Serial.print(encoder_local);
 Serial.print(" | dENC:"); Serial.print(d_encoder);
