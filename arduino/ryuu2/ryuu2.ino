@@ -18,12 +18,16 @@
 #define POT_MIN 143
 #define MAX_STEER_TIRE_DEG 22
 
-#define KP 0.3
-#define KI 0.0005
-#define KD 0.004
-#define PID_DEADBAND 0.07
-// 조향 속도 미세 상향: 기존 실질 최대 50% -> 60%
-#define STEER_PWM_GAIN 0.80
+// 오차 기반 Kp 스케줄(1차 공격 튜닝): 작은 오차는 안정, 큰 오차는 민첩
+#define KP_NEAR 0.30
+#define KP_FAR 0.70
+#define KP_NEAR_ERR_DEG 1.5
+#define KP_FAR_ERR_DEG 6.0
+#define KI 0.0
+#define KD 0.0
+#define PID_DEADBAND 0.05
+// 조향 속도 상향: 급커브 대응을 위해 조향 최대 PWM 확장
+#define STEER_PWM_GAIN 0.85
 // 조향 각속도 로그용 저역통과필터(0~1, 클수록 반응 빠름)
 #define STEER_RATE_LPF_ALPHA 0.25
 
