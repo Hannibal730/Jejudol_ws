@@ -334,6 +334,9 @@ class LaneFollowerNode(Node):
         else:
             self.device = torch.device('cpu')
 
+        self.get_logger().info(f"Loading arrow weights from: {opt.arrow_weights}")
+        self.arrow_model = YOLO(opt.arrow_weights).to(self.device)
+
         self.get_logger().info(f"Loading weights from: {opt.weights}")
         self.model = YOLO(opt.weights).to(self.device)
 
@@ -423,6 +426,7 @@ class LaneFollowerNode(Node):
 
         cv2.namedWindow("Original Camera View", cv2.WINDOW_AUTOSIZE)
         cv2.namedWindow("Final Path & Logs (on BEV)", cv2.WINDOW_AUTOSIZE)
+        cv2.namedWindow("Arrow Masking", cv2.WINDOW_AUTOSIZE)
 
         self.frame_count = 0
 
@@ -552,6 +556,43 @@ class LaneFollowerNode(Node):
 
     def process_image(self, im0s):
         im0s = self.undistort_image(im0s)
+
+        # ==============================================================================
+        # [화살표 인식 및 마스킹 (RAW 원본 이미지)]
+        # ==============================================================================
+        arrow_results = self.arrow_model(
+            im0s,
+            imgsz=self.opt.img_size,
+            conf=self.opt.arrow_conf_thres,
+            device=self.device,
+            verbose=False
+        )
+        arrow_result = arrow_results[0]
+        
+        # 디텍션된 화살표 시각화용 이미지 생성
+        try:
+            arrow_viz = arrow_result.plot()
+        except Exception:
+            arrow_viz = im0s.copy()
+            
+        # arrow.pt가 세그먼테이션(마스크) 정보를 가지고 있는 모델일 경우
+        if arrow_result.masks is not None:
+            for mask_tensor in arrow_result.masks.data:
+                mask_np = (mask_tensor.cpu().numpy() * 255).astype(np.uint8)
+                if mask_np.shape != arrow_result.orig_shape[:2]:
+                    mask_np = cv2.resize(
+                        mask_np,
+                        (arrow_result.orig_shape[1], arrow_result.orig_shape[0])
+                    )
+                # 원본 이미지(im0s)에서 화살표 마스크 영역을 검은색으로 지움
+                im0s[mask_np > 0] = [0, 0, 0]
+        # arrow.pt가 일반 바운딩 박스 모델일 경우
+        elif arrow_result.boxes is not None:
+            for box in arrow_result.boxes.xyxy:
+                x1, y1, x2, y2 = map(int, box.cpu().numpy())
+                # 바운딩 박스 내부 영역을 검은색으로 지움
+                im0s[y1:y2, x1:x2] = [0, 0, 0]
+        # ==============================================================================
 
         steer_deg = None
         goal_point_bev = None
@@ -920,7 +961,8 @@ class LaneFollowerNode(Node):
 
         #cv2.imshow("Original Camera View", original_with_drivable_area)
         cv2.imshow("Final Path & Logs (on BEV)", bev_im_for_drawing)
-        #cv2.imshow("Roboflow Detections (on BEV)", annotated_frame)
+        cv2.imshow("Roboflow Detections (on BEV)", annotated_frame)
+        cv2.imshow("Arrow Masking", arrow_viz)
         cv2.waitKey(1)
 
 
@@ -930,14 +972,17 @@ def main(args=None):
 
     package_share_directory = get_package_share_directory('yolotl_ros2')
     default_weights = os.path.join(package_share_directory, 'config', 'weights3.pt')
-    default_params = os.path.join(package_share_directory, 'config', 'bev_params_03172.npz')
+    default_arrow_weights = os.path.join(package_share_directory, 'config', 'arrow.pt')
+    default_params = os.path.join(package_share_directory, 'config', 'bev_params_0324.npz')
     default_calib = os.path.join(package_share_directory, 'config', 'camera_calibration.pkl')
 
     parser.add_argument('--weights', default=default_weights, help='Path to model weights')
+    parser.add_argument('--arrow-weights', default=default_arrow_weights, help='Path to arrow model weights')
     parser.add_argument('--param-file', default=default_params, help='Path to BEV parameters file')
     parser.add_argument('--calib-file', default=default_calib, help='Path to camera calibration pkl file')
     parser.add_argument('--img-size', type=int, default=640)
     parser.add_argument('--conf-thres', type=float, default=0.8)
+    parser.add_argument('--arrow-conf-thres', type=float, default=0.3)
     parser.add_argument('--iou-thres', type=float, default=0.5)
     parser.add_argument('--device', default='0')
     parser.add_argument('--topic', type=str, default='/image_raw/compressed', help='ROS 2 Image Topic')
