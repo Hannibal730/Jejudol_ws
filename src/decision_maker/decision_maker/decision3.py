@@ -22,9 +22,9 @@ DEFAULTS = {
     'emergency_deceleration_target_throttle': 0.0,
     'emergency_recovery_delay_sec': 0.0,
 
-    'decelerate_to_gps_sec': 1.5,
-    'decelerate_to_yolotl_sec': 1.5,
-    'decelerate_to_rrt_sec': 1.5,
+    'decelerate_to_gps_sec': 0.7,
+    'decelerate_to_yolotl_sec': 0.7,
+    'decelerate_to_rrt_sec': 0.7,
 
     # 안전 장치
     'auto_steer_angle_abs_max': 23.0,
@@ -44,7 +44,7 @@ DEFAULTS = {
 
     # mission 분기 입력: end_idx
     'end_idx': 0,
-    'end_idx_min': 225,
+    'end_idx_min': 226,
     'end_idx_max': 530,
     'use_end_idx_topic': True, # True면 토픽 구독값 사용, False면 파라미터 end_idx 고정값 사용.
     'end_idx_topic': '/gps/roi_end_idx',
