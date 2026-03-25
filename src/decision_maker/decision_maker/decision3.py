@@ -44,9 +44,9 @@ DEFAULTS = {
 
     # mission 분기 입력: end_idx
     'end_idx': 0,
-    'end_idx_min': 0,
-    'end_idx_max': 999999,
-    'use_end_idx_topic': True,
+    'end_idx_min': 225,
+    'end_idx_max': 530,
+    'use_end_idx_topic': True, # True면 토픽 구독값 사용, False면 파라미터 end_idx 고정값 사용.
     'end_idx_topic': '/gps/roi_end_idx',
 
     'manual_stop_use_spacebar': True,
@@ -55,7 +55,7 @@ DEFAULTS = {
 
 # mission state 이름
 MISSION_EMERGENCY = 'emergency'
-MISSION_LANE = 'lane'
+MISSION_YOLOTL = 'yolotl'
 MISSION_GPS = 'gps'
 MISSION_RRT = 'rrt'
 
@@ -64,7 +64,7 @@ MISSION_RRT = 'rrt'
 # 1) lane_detect=True
 #    - end_idx in [end_idx_min, end_idx_max] -> mission_state=rrt
 #    - 아니면 emergency=True -> mission_state=emergency
-#    - 아니면 mission_state=lane
+#    - 아니면 mission_state=yolotl
 #
 # 2) lane_detect=False
 #    - num_lidar_cone > 0 -> mission_state=rrt
@@ -453,7 +453,7 @@ class DecisionNode(Node):
                 return MISSION_RRT
             if self.emergency:
                 return MISSION_EMERGENCY
-            return MISSION_LANE
+            return MISSION_YOLOTL
 
         if num_lidar_cone > 0:
             return MISSION_RRT
@@ -499,7 +499,7 @@ class DecisionNode(Node):
             self._cancel_transition_deceleration()
             steer_cmd = self._clamp_steer(self.auto_steer_angle_yolotl)
             throttle_cmd = self._compute_emergency_throttle(now_sec)
-        elif state == MISSION_LANE:
+        elif state == MISSION_YOLOTL:
             self.decel_active = False
             steer_cmd = self._clamp_steer(self.auto_steer_angle_yolotl)
             yolotl_target_throttle = self._map_throttle_inverse_by_steer(
