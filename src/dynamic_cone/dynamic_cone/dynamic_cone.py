@@ -24,9 +24,9 @@ class ConeDetectionNode(Node):
         # ROS 2 파라미터 선언 (기본값 설정)
         self.declare_parameter('weights', 'cone.pt')
         self.declare_parameter('topic', '/image_raw/compressed')
-        self.declare_parameter('conf', 0.7)
+        self.declare_parameter('conf', 0.5)
         self.declare_parameter('device', '')
-        self.declare_parameter('bev_params', 'bev_params_03172.npz')
+        self.declare_parameter('bev_params', 'bev_params_0325.npz')
         self.declare_parameter('obstacle_threshold', 0.1)
 
         # 파라미터 값 읽기
@@ -81,9 +81,9 @@ class ConeDetectionNode(Node):
             self.get_logger().error(f"Failed to load BEV params: {e}")
 
         # 좌표 변환 상수 (demo_with_ros2.py와 동일)
-        self.m_per_pixel_y = 0.0036
+        self.m_per_pixel_y = 0.0027
         self.y_offset_m = 1.23
-        self.m_per_pixel_x = 0.0037
+        self.m_per_pixel_x = 0.0030
 
         self.get_logger().info(f"Loading YOLO model from: {weights_path}")
         
@@ -216,10 +216,10 @@ class ConeDetectionNode(Node):
             # [추가] 장애물(콘)이 2개 이상이면 EMERGENCY 표시 (크고 굵게)
             now = self.get_clock().now()
             if 2 <= obstacle_count < 4:
-                self.emergency_end_time = now + Duration(seconds=0.5)
+                self.emergency_end_time = now + Duration(seconds=0.1)
 
             is_emergency = False
-            if now < self.emergency_end_time:
+            if now <= self.emergency_end_time:
                 cv2.putText(annotated_frame, "EMERGENCY", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
                 is_emergency = True
             self.pub_emergency.publish(Bool(data=is_emergency))

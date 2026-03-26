@@ -124,6 +124,44 @@ def extract_centerline_points_from_component(component_mask, min_points_per_y=1,
     return ys_center[sort_idx], xs_center[sort_idx]
 
 
+def extract_largest_component_in_bbox(binary_mask, bbox_xyxy, min_area=10000, close_ksize=5):
+    """
+    바운딩 박스 내부 영역만 대상으로 connected component를 계산하여
+    가장 큰 차선 성분 하나만 반환합니다.
+    """
+    h, w = binary_mask.shape[:2]
+    x1, y1, x2, y2 = [int(round(v)) for v in bbox_xyxy]
+
+    x1 = max(0, min(x1, w - 1))
+    y1 = max(0, min(y1, h - 1))
+    x2 = max(0, min(x2, w))
+    y2 = max(0, min(y2, h))
+
+    if x2 <= x1 or y2 <= y1:
+        return None
+
+    roi_mask = binary_mask[y1:y2, x1:x2]
+    if roi_mask.size == 0:
+        return None
+
+    processed_roi = morph_close(roi_mask, ksize=close_ksize)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        processed_roi, connectivity=8
+    )
+
+    if num_labels <= 1:
+        return None
+
+    largest_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
+    if stats[largest_label, cv2.CC_STAT_AREA] < min_area:
+        return None
+
+    component_mask = np.zeros_like(binary_mask, dtype=np.uint8)
+    component_roi = component_mask[y1:y2, x1:x2]
+    component_roi[labels == largest_label] = 255
+    return component_mask
+
+
 def resample_polyline_by_y(xs, ys, y_min, y_max, y_step=1):
     """
     주어진 polyline(xs, ys)을 y축 기준으로 보간해서
@@ -389,7 +427,7 @@ class LaneFollowerNode(Node):
         self.THROTTLE_MIN_FOR_LD, self.THROTTLE_MAX_FOR_LD = 0.4,0.8
         self.current_throttle = self.THROTTLE_MIN_FOR_LD
 
-        self.MIN_LOOKAHEAD_DISTANCE = 2.3
+        self.MIN_LOOKAHEAD_DISTANCE = 2.4
         self.MAX_LOOKAHEAD_DISTANCE = 2.8
         self.MAX_STEER_DEG = 23.0
         self.prev_steer_deg = 0.0
@@ -623,7 +661,7 @@ class LaneFollowerNode(Node):
         bev_im_for_drawing = bev_image_input.copy()
         current_detections = []
 
-        if result.masks is not None:
+        if result.masks is not None and result.boxes is not None:
             confidences = result.boxes.conf
             # Process each detected mask individually
             for i, mask_tensor in enumerate(result.masks.data):
@@ -638,27 +676,19 @@ class LaneFollowerNode(Node):
                         (result.orig_shape[1], result.orig_shape[0])
                     )
 
-                # 2. Clean up the mask and find the largest component within it
-                # This ensures one detection box corresponds to one lane line
-                processed_mask = morph_close(mask_np, ksize=5)
-                
-                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-                    processed_mask, connectivity=8
+                if i >= len(result.boxes.xyxy):
+                    continue
+
+                # 2. 바운딩 박스 내부에서만 가장 큰 차선 성분 하나를 선택
+                bbox_xyxy = result.boxes.xyxy[i].cpu().numpy()
+                component_mask = extract_largest_component_in_bbox(
+                    mask_np,
+                    bbox_xyxy,
+                    min_area=10000,
+                    close_ksize=5
                 )
-
-                if num_labels <= 1:
+                if component_mask is None:
                     continue
-
-                # Find the largest component by area (ignoring background label 0)
-                largest_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
-                
-                # Check if the largest component is big enough (restored min_size=10000)
-                if stats[largest_label, cv2.CC_STAT_AREA] < 10000:
-                    continue
-
-                # Create a mask with only the largest component
-                component_mask = np.zeros_like(processed_mask, dtype=np.uint8)
-                component_mask[labels == largest_label] = 255
 
                 # 3. Extract centerline from this single largest component
                 ys_center, xs_center = extract_centerline_points_from_component(

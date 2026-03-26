@@ -33,10 +33,10 @@ from builtin_interfaces.msg import Duration
 # -------------------------
 # ROI configuration for counting detections in velodyne frame
 # -------------------------
-ROI_X_MIN = -0.5
-ROI_X_MAX = 3.5
-ROI_Y_MIN = -1.3
-ROI_Y_MAX = 1.3
+ROI_X_MIN = -0.2
+ROI_X_MAX = 5.5
+ROI_Y_MIN = -1.5
+ROI_Y_MAX = 1.5
 
 # -------------------------
 # Define colors for each class

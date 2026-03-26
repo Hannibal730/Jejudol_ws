@@ -2,11 +2,14 @@
 ublox_gps_node:
   ros__parameters:
     debug: 1                    # Range 0-4 (0 means no debug statements will print)
-    device: /dev/ublox_f9r
+    # device: /dev/ublox_f9r
+    device: /dev/ttyACM1
+
     
     frame_id: gps
     rate: 15.0                   # in Hz
     nav_rate: 1                 
+    use_adr: false               # Disable F9R ADR/IMU fusion
                                 
     dynamic_model: portable
     #사람이 들고 다니는 장치 기준. 차량이면 automotive, 고정 기지국이면 stationary
@@ -36,3 +39,11 @@ ublox_gps_node:
     
     publish:
       aid/all: false
+      # imu 퓨전 끄려면 밑에 모두 false
+      nav/att: false
+      esf/all: false
+      esf/ins: false
+      esf/meas: false
+      esf/raw: false
+      esf/status: false
+      hnr/pvt: false

@@ -5,7 +5,7 @@ MaRRT Caution Pure Pursuit Node (ROS2)
 
 - /waypoints 토픽(웨이포인트 배열)을 구독하여 B-spline 보간으로 등간격 제어점을 생성합니다.
 - /odometry 토픽을 구독하여 차량의 현재 위치(라이다, 후륜축 중심)와 heading을 업데이트합니다.
-- lookahead_distatnce_caution(기본 1.5m)을 사용하여 pure pursuit 제어를 수행합니다.
+- /auto_throttle 기반 동적 lookahead distance를 사용해 pure pursuit 제어를 수행합니다.
 - 조향각은 /auto_steer_angle_rrt_caution으로 publish합니다.
 - lookahead point는 /rrt/caution_lookahead_point로 publish합니다.
 """
@@ -29,11 +29,15 @@ class MaRRTCautionPurePursuit(Node):
         super().__init__('rrt_caution_purepursuit')
 
         self.declare_parameter('wheelbase', 0.724)
-        
         self.declare_parameter('lookahead_distatnce_caution', 1.5)
         self.declare_parameter('max_steer_deg', 23.0)
-        self.declare_parameter('steer_gain', 1.0)
         self.declare_parameter('use_arc_length_lookahead', False)
+        self.declare_parameter('use_throttle_based_lookahead', True)
+        self.declare_parameter('throttle_topic', '/auto_throttle')
+        self.declare_parameter('throttle_min_for_ld', 0.4)
+        self.declare_parameter('throttle_max_for_ld', 0.6)
+        self.declare_parameter('lookahead_min_distance', 1.6)
+        self.declare_parameter('lookahead_max_distance', 2.0)
         
         # velodyne가 후륜축보다 +x(전방)으로 있을 때, 후륜축의 velodyne 기준 좌표는 음수 x
         self.declare_parameter('rear_axle_x_in_velodyne', -0.46)
@@ -42,14 +46,23 @@ class MaRRTCautionPurePursuit(Node):
         self.wheelbase = float(self.get_parameter('wheelbase').value)
         self.Ld = float(self.get_parameter('lookahead_distatnce_caution').value)
         self.max_steer_deg = float(self.get_parameter('max_steer_deg').value)
-        self.steer_gain = float(self.get_parameter('steer_gain').value)
         self.use_arc_length_lookahead = bool(self.get_parameter('use_arc_length_lookahead').value)
+        self.use_throttle_based_lookahead = bool(self.get_parameter('use_throttle_based_lookahead').value)
+        self.throttle_topic = str(self.get_parameter('throttle_topic').value)
+        self.throttle_min_for_ld = float(self.get_parameter('throttle_min_for_ld').value)
+        self.throttle_max_for_ld = float(self.get_parameter('throttle_max_for_ld').value)
+        self.lookahead_min_distance = float(self.get_parameter('lookahead_min_distance').value)
+        self.lookahead_max_distance = float(self.get_parameter('lookahead_max_distance').value)
         self.rear_axle_x_in_velodyne = float(self.get_parameter('rear_axle_x_in_velodyne').value)
         self.rear_axle_y_in_velodyne = float(self.get_parameter('rear_axle_y_in_velodyne').value)
         if self.max_steer_deg <= 0.0:
             self.max_steer_deg = 23.0
-        if self.steer_gain <= 0.0:
-            self.steer_gain = 1.0
+        if self.throttle_max_for_ld <= self.throttle_min_for_ld:
+            self.throttle_max_for_ld = self.throttle_min_for_ld + 1e-3
+        if self.lookahead_max_distance < self.lookahead_min_distance:
+            self.lookahead_max_distance = self.lookahead_min_distance
+
+        self.current_throttle = self.throttle_min_for_ld
 
         # 차량의 현재 위치 (velodyne 좌표계, 후륜축 중심)
         self.vehicle_x = self.rear_axle_x_in_velodyne
@@ -67,6 +80,7 @@ class MaRRTCautionPurePursuit(Node):
         # 구독자
         self.waypoints_sub = self.create_subscription(WaypointsArray, '/waypoints', self.waypoints_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, '/odometry', self.odometry_callback, 10)
+        self.throttle_sub = self.create_subscription(Float32, self.throttle_topic, self.throttle_callback, 10)
 
         self.get_logger().info(
             'MaRRT Caution Pure Pursuit 노드가 초기화되었습니다. '
@@ -81,6 +95,9 @@ class MaRRTCautionPurePursuit(Node):
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         return math.atan2(siny_cosp, cosy_cosp)
+
+    def throttle_callback(self, msg):
+        self.current_throttle = float(np.clip(msg.data, self.throttle_min_for_ld, self.throttle_max_for_ld))
 
     def waypoints_callback(self, msg):
         # /waypoints 메시지에서 (x, y) 좌표 추출 (velodyne 좌표계)
@@ -170,8 +187,21 @@ class MaRRTCautionPurePursuit(Node):
             y_rel = -math.sin(self.vehicle_yaw) * dx + math.cos(self.vehicle_yaw) * dy
             transformed_points.append((x_rel, y_rel))
 
-        # Lookahead distance (self.Ld 사용)
+        # Lookahead distance
         Ld = self.Ld
+        if self.use_throttle_based_lookahead:
+            v_norm = (self.current_throttle - self.throttle_min_for_ld) / (
+                self.throttle_max_for_ld - self.throttle_min_for_ld + 1e-6
+            )
+            v_norm = float(np.clip(v_norm, 0.0, 1.0))
+            ld_target = self.lookahead_min_distance + (
+                self.lookahead_max_distance - self.lookahead_min_distance
+            ) * v_norm
+            Ld = float(np.clip(
+                ld_target,
+                self.lookahead_min_distance,
+                self.lookahead_max_distance
+            ))
 
         if self.use_arc_length_lookahead:
             # 현재 방식: 최근접 제어점부터 경로 arc length를 누적해 Ld 지점을 선택
@@ -230,12 +260,7 @@ class MaRRTCautionPurePursuit(Node):
         # 순수 추종 제어 계산
         alpha = math.atan2(lookahead_point[1], lookahead_point[0])
         steer_rad = math.atan2(2.0 * self.wheelbase * math.sin(alpha), Ld)
-        raw_steer_deg = - math.degrees(steer_rad)
-        gain_threshold_deg = self.max_steer_deg / 3.0
-        if abs(raw_steer_deg) > gain_threshold_deg:
-            steer_deg = raw_steer_deg * self.steer_gain
-        else:
-            steer_deg = raw_steer_deg
+        steer_deg = - math.degrees(steer_rad)
         steer_deg = max(-self.max_steer_deg, min(self.max_steer_deg, steer_deg))
         # self.get_logger().info(
         #     f'Caution Pure Pursuit: Ld={Ld:.2f}m, Lookahead=({lookahead_point[0]:.2f}, {lookahead_point[1]:.2f}), '

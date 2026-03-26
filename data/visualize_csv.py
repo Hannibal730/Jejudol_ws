@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # Define file paths
 # gps_data_path = f'{processed_dir}/이전대회 GPS 데이터 (기본+평행주차)_direction.csv'
-gps_data_path = '/home/hannibal/Jejudol_ws/data/Jeju_Map/최종)2026 국제 E-mobility 전시회_1_5 자율주행 레이싱 대회 경로.csv'
+gps_data_path = '/home/hannibal/Jejudol_ws/data/rosbag2_2026_03_26-17_52_41.csv'
 
 # Load the data
 gps_data = pd.read_csv(gps_data_path)

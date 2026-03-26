@@ -12,7 +12,7 @@ def generate_launch_description():
  
           DeclareLaunchArgument('host',                  default_value='www.gnssdata.or.kr'),
           DeclareLaunchArgument('port',                  default_value='2101'),
-          DeclareLaunchArgument('mountpoint',            default_value='CHJU-RTCM32'),  # CHJU-RTCM32   CHJU-RTCM31    JEJU-RTCM30
+          DeclareLaunchArgument('mountpoint',            default_value='JEJU-RTCM30'),  # CHJU-RTCM32   CHJU-RTCM31    JEJU-RTCM30
           DeclareLaunchArgument('ntrip_version',         default_value='None'),
           DeclareLaunchArgument('authenticate',          default_value='True'),
           DeclareLaunchArgument('username',              default_value='smzzang21@konkuk.ac.kr'),
