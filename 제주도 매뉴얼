@@ -26,12 +26,14 @@ ros2 launch ublox_gps ublox_f9p_launch.py
 ros2 launch ublox_gps ublox_f9r_launch.py
 ros2 run fix2nmea fix2nmea
 ros2 launch ntrip_client ntrip_client_launch.py
+pl
 
 ros2 launch utm_tf tf_gps_csv.launch.py
 ros2 launch gps_planning f9r_roi_path.launch.py
 ros2 run gps_planning gps_purepursuit.py
 
 rv
+rviz2
 ros2 run voxelnext_ros2 lidar_cone_detect.py
 ros2 run dynamic_cone dynamic_cone
 
