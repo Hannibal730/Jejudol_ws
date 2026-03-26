@@ -619,73 +619,117 @@ class LaneFollowerNode(Node):
         )
         result = results[0]
 
-        # 3. Mask Processing
-        combined_mask_bev = np.zeros(result.orig_shape[:2], dtype=np.uint8)
-        if result.masks is not None:
-            confidences = result.boxes.conf
-            for i, mask_tensor in enumerate(result.masks.data):
-                if confidences[i] >= self.opt.conf_thres:
-                    mask_np = (mask_tensor.cpu().numpy() * 255).astype(np.uint8)
-                    if mask_np.shape != result.orig_shape[:2]:
-                        mask_np = cv2.resize(
-                            mask_np,
-                            (result.orig_shape[1], result.orig_shape[0])
-                        )
-                    combined_mask_bev = np.maximum(combined_mask_bev, mask_np)
-
-        final_mask = final_filter(combined_mask_bev)
+        # 3. Mask & Lane Extraction (per detection)
         bev_im_for_drawing = bev_image_input.copy()
-
-        # 4. Lane Extraction: component -> y별 중심점 추출
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-            final_mask, connectivity=8
-        )
         current_detections = []
 
-        if num_labels > 1:
-            for i in range(1, num_labels):
-                if stats[i, cv2.CC_STAT_AREA] >= 100:
-                    component_mask = np.zeros_like(final_mask, dtype=np.uint8)
-                    component_mask[labels == i] = 255
+        if result.masks is not None:
+            confidences = result.boxes.conf
+            # Process each detected mask individually
+            for i, mask_tensor in enumerate(result.masks.data):
+                if confidences[i] < self.opt.conf_thres:
+                    continue
 
-                    ys_center, xs_center = extract_centerline_points_from_component(
-                        component_mask,
-                        min_points_per_y=1,
-                        y_step=1
+                # 1. Get individual mask for one detection
+                mask_np = (mask_tensor.cpu().numpy() * 255).astype(np.uint8)
+                if mask_np.shape != result.orig_shape[:2]:
+                    mask_np = cv2.resize(
+                        mask_np,
+                        (result.orig_shape[1], result.orig_shape[0])
                     )
 
-                    if ys_center is None or len(ys_center) < 5:
-                        continue
+                # 2. Clean up the mask and find the largest component within it
+                # This ensures one detection box corresponds to one lane line
+                processed_mask = morph_close(mask_np, ksize=5)
+                
+                num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+                    processed_mask, connectivity=8
+                )
 
-                    x_bottom = xs_center[-1]
+                if num_labels <= 1:
+                    continue
 
-                    current_detections.append({
-                        'xs': xs_center,
-                        'ys': ys_center,
-                        'x_bottom': x_bottom
-                    })
+                # Find the largest component by area (ignoring background label 0)
+                largest_label = np.argmax(stats[1:, cv2.CC_STAT_AREA]) + 1
+                
+                # Check if the largest component is big enough (restored min_size=10000)
+                if stats[largest_label, cv2.CC_STAT_AREA] < 10000:
+                    continue
+
+                # Create a mask with only the largest component
+                component_mask = np.zeros_like(processed_mask, dtype=np.uint8)
+                component_mask[labels == largest_label] = 255
+
+                # 3. Extract centerline from this single largest component
+                ys_center, xs_center = extract_centerline_points_from_component(
+                    component_mask,
+                    min_points_per_y=1,
+                    y_step=1
+                )
+
+                if ys_center is None or len(ys_center) < 5:
+                    continue
+
+                # 4. Add to current detections
+                x_bottom = xs_center[-1]
+                current_detections.append({
+                    'xs': xs_center,
+                    'ys': ys_center,
+                    'x_bottom': x_bottom
+                })
 
         current_detections.sort(key=lambda c: c['x_bottom'])
 
         # 5. Tracking
         left_lane_tracked = self.tracked_lanes['left']
         right_lane_tracked = self.tracked_lanes['right']
+        
+        last_left_x = left_lane_tracked['xs'][-1] if left_lane_tracked['xs'] is not None else None
+        last_right_x = right_lane_tracked['xs'][-1] if right_lane_tracked['xs'] is not None else None
+
         current_left, current_right = None, None
 
         if len(current_detections) == 2:
-            current_left, current_right = current_detections[0], current_detections[1]
+            cand_left = current_detections[0]
+            cand_right = current_detections[1]
+
+            if last_right_x is not None and last_left_x is None:
+                # 오른쪽 차선만 트래킹 중
+                dist0 = abs(cand_left['x_bottom'] - last_right_x)
+                dist1 = abs(cand_right['x_bottom'] - last_right_x)
+                if dist0 < dist1:
+                    # cand_left가 기존 오른쪽 차선에 매칭됨 -> cand_right는 노이즈(오른쪽 차선보다 오른쪽에 생김)이므로 무시
+                    current_right = cand_left
+                else:
+                    # cand_right가 기존 오른쪽 차선에 매칭됨 -> cand_left는 새로 등장한 왼쪽 차선
+                    current_left = cand_left
+                    current_right = cand_right
+                    
+            elif last_left_x is not None and last_right_x is None:
+                # 왼쪽 차선만 트래킹 중
+                dist0 = abs(cand_left['x_bottom'] - last_left_x)
+                dist1 = abs(cand_right['x_bottom'] - last_left_x)
+                if dist1 < dist0:
+                    # cand_right가 기존 왼쪽 차선에 매칭됨 -> cand_left는 노이즈(왼쪽 차선보다 왼쪽에 생김)이므로 무시
+                    current_left = cand_right
+                else:
+                    # cand_left가 기존 왼쪽 차선에 매칭됨 -> cand_right는 새로 등장한 오른쪽 차선
+                    current_left = cand_left
+                    current_right = cand_right
+            else:
+                # 양쪽 차선 모두 트래킹 중이거나 둘 다 아니면 x 순서대로 할당
+                current_left = cand_left
+                current_right = cand_right
 
         elif len(current_detections) == 1:
             detected_lane = current_detections[0]
 
-            dist_to_left = abs(detected_lane['x_bottom'] - left_lane_tracked['xs'][-1]) \
-                if left_lane_tracked['xs'] is not None else float('inf')
-            dist_to_right = abs(detected_lane['x_bottom'] - right_lane_tracked['xs'][-1]) \
-                if right_lane_tracked['xs'] is not None else float('inf')
+            dist_to_left = abs(detected_lane['x_bottom'] - last_left_x) if last_left_x is not None else float('inf')
+            dist_to_right = abs(detected_lane['x_bottom'] - last_right_x) if last_right_x is not None else float('inf')
 
-            if dist_to_left < dist_to_right and left_lane_tracked['xs'] is not None:
+            if dist_to_left < dist_to_right and last_left_x is not None:
                 current_left = detected_lane
-            elif dist_to_right < dist_to_left and right_lane_tracked['xs'] is not None:
+            elif dist_to_right < dist_to_left and last_right_x is not None:
                 current_right = detected_lane
             else:
                 if detected_lane['x_bottom'] < self.bev_w / 2:
@@ -973,7 +1017,7 @@ def main(args=None):
     package_share_directory = get_package_share_directory('yolotl_ros2')
     default_weights = os.path.join(package_share_directory, 'config', 'weights3.pt')
     default_arrow_weights = os.path.join(package_share_directory, 'config', 'arrow.pt')
-    default_params = os.path.join(package_share_directory, 'config', 'bev_params_0324.npz')
+    default_params = os.path.join(package_share_directory, 'config', 'bev_params_0325.npz')
     default_calib = os.path.join(package_share_directory, 'config', 'camera_calibration.pkl')
 
     parser.add_argument('--weights', default=default_weights, help='Path to model weights')
@@ -982,7 +1026,7 @@ def main(args=None):
     parser.add_argument('--calib-file', default=default_calib, help='Path to camera calibration pkl file')
     parser.add_argument('--img-size', type=int, default=640)
     parser.add_argument('--conf-thres', type=float, default=0.8)
-    parser.add_argument('--arrow-conf-thres', type=float, default=0.3)
+    parser.add_argument('--arrow-conf-thres', type=float, default=1.0)
     parser.add_argument('--iou-thres', type=float, default=0.5)
     parser.add_argument('--device', default='0')
     parser.add_argument('--topic', type=str, default='/image_raw/compressed', help='ROS 2 Image Topic')
