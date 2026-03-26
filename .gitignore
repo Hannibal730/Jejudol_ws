@@ -40,7 +40,6 @@ AMENT_IGNORE
 *.pt
 *.pth
 *.onnx
-*.jpg
 
 # bag
 metadata.yaml

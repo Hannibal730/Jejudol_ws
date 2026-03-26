@@ -21,7 +21,7 @@
 #define KP 0.5
 #define KI 0.0
 #define KD 0.0
-#define PID_DEADBAND 0.07
+#define PID_DEADBAND 0.05
 
 #define ACCEL_CENTER_US 1500
 #define STEER_CENTER_US 1500

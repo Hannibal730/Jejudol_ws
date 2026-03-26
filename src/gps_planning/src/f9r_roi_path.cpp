@@ -7,7 +7,6 @@
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
-#include "std_msgs/msg/int32.hpp"
 
 #include <vector>
 #include <limits>
@@ -39,7 +38,6 @@ public:
     csv_frame_         = this->declare_parameter<std::string>("csv_frame", "csv");      // CSV(UTM m) 프레임
     roi_end_output_frame_ = this->declare_parameter<std::string>("roi_end_output_frame", "velodyne");
     roi_end_point_topic_  = this->declare_parameter<std::string>("roi_end_point_topic", "/f9r_roi_end_velodyne");
-    roi_end_idx_topic_    = this->declare_parameter<std::string>("roi_end_idx_topic", "/gps/roi_end_idx");
     timer_frequency_   = this->declare_parameter<double>("timer_frequency", 20.0);
     roi_length_m_      = this->declare_parameter<double>("roi_length_m", 4.0);          // ROI 길이 [m]
     use_points_length_ = this->declare_parameter<bool>("use_points_length", false);     // ROI 길이를 포인트 개수로 자를지 여부. 만약 false면 자동으로 roi_length_m 사용
@@ -65,7 +63,6 @@ public:
     roi_path_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/f9r_roi_path", qos_tl);
     roi_end_pub_  = this->create_publisher<visualization_msgs::msg::Marker>("/f9r_roi_end",  qos_tl);
     roi_end_point_pub_ = this->create_publisher<geometry_msgs::msg::PointStamped>(roi_end_point_topic_, qos_tl);
-    roi_end_idx_pub_ = this->create_publisher<std_msgs::msg::Int32>(roi_end_idx_topic_, qos_tl);
 
     // ====== Timer ======
     timer_ = this->create_wall_timer(
@@ -73,9 +70,9 @@ public:
       std::bind(&ROIPathPublisher::timerCallback, this));
 
     RCLCPP_INFO(this->get_logger(),
-      "[f9r_roi_path] csv_frame=%s, target=%s, roi_end_out=%s(%s), roi_end_idx_topic=%s, freq=%.1f Hz, ROI=%.2f %s, search_span_pts=%d",
+      "[f9r_roi_path] csv_frame=%s, target=%s, roi_end_out=%s(%s), freq=%.1f Hz, ROI=%.2f %s, search_span_pts=%d",
       csv_frame_.c_str(), target_frame_.c_str(),
-      roi_end_output_frame_.c_str(), roi_end_point_topic_.c_str(), roi_end_idx_topic_.c_str(), timer_frequency_,
+      roi_end_output_frame_.c_str(), roi_end_point_topic_.c_str(), timer_frequency_,
       use_points_length_ ? (double)roi_length_pts_ : roi_length_m_,
       use_points_length_ ? "pts" : "m", search_span_pts_);
   }
@@ -234,7 +231,6 @@ private:
     publishPathMarker(start_idx, end_idx, csv_local);
     publishEndMarker(end_idx, csv_local);
     publishEndPointInOutputFrame(end_idx, csv_local);
-    publishEndIndex(end_idx);
 
     // ====== 상태 커밋 ======
     {
@@ -336,14 +332,6 @@ private:
     roi_end_point_pub_->publish(end_in_output);
   }
 
-  void publishEndIndex(size_t idx)
-  {
-    std_msgs::msg::Int32 msg;
-    const size_t max_i32 = static_cast<size_t>(std::numeric_limits<int32_t>::max());
-    msg.data = static_cast<int32_t>(std::min(idx, max_i32));
-    roi_end_idx_pub_->publish(msg);
-  }
-
 private:
   // ====== TF ======
   tf2_ros::Buffer tf_buffer_;
@@ -354,7 +342,6 @@ private:
   std::string csv_frame_;
   std::string roi_end_output_frame_;
   std::string roi_end_point_topic_;
-  std::string roi_end_idx_topic_;
   double timer_frequency_;
   double roi_length_m_;
   bool   use_points_length_;
@@ -378,7 +365,6 @@ private:
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr roi_path_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr roi_end_pub_;
   rclcpp::Publisher<geometry_msgs::msg::PointStamped>::SharedPtr roi_end_point_pub_;
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr roi_end_idx_pub_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

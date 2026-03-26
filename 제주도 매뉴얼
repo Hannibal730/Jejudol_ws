@@ -17,7 +17,6 @@ src/utm_tf/config/tf_gps_csv.yaml 에서 새로 저장한 csv맵으로 지정.
 
 ================대회 세팅================
 
-
 ros2 run usb_cam usb_cam_node_exe --ros-args -p video_device:="/dev/video2" -p pixel_format:="mjpeg2rgb"
 (비디오 번호는 0 또는 2)
 ros2 run rqt_image_view rqt_image_view
@@ -38,12 +37,10 @@ ros2 run dynamic_cone dynamic_cone
 
 ros2 run rrt_planning main.py
 ros2 run rrt_planning rrt_purepursuit.py
-ros2 run rrt_planning rrt_caution_purepursuit
+ros2 run rrt_planning rrt_caution_purepursuit.py
 
-ros2 run decision_maker decision (문코스, 정적장애물 포함 with visualizer)
-ros2 run decision_maker decision3 (문코스, 정적장애물 미포함 with visualizer2)
+ros2 run decision_maker decision
 ros2 run decision_maker visualizer
-ros2 run decision_maker visualizer2 (with  ros2 run decision_maker visualizer_flowchart  )
 ros2 run serial_bridge serial_bridge --ros-args -p port:=/dev/arduino_bridge
 
 ================자율주행================

@@ -19,11 +19,7 @@ setup(
     entry_points={
         'console_scripts': [
             'decision = decision_maker.decision:main',
-            'decision2 = decision_maker.decision2:main',
-            'decision3 = decision_maker.decision3:main',
             'visualizer = decision_maker.visualizer:main',
-            'visualizer2 = decision_maker.visualizer2:main',
-            'visualizer_flowchart = decision_maker.visualizer_flowchart:main',
         ],
     },
 )

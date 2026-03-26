@@ -41,7 +41,7 @@ class MaRRTPathPlanNode(Node):
         self.declare_parameter('roi_end_topic', '/gps/f9r_roi_end_velodyne')
         self.declare_parameter('rrt_target_visual_topic', '/rrt/rrt_target')
         self.declare_parameter('use_roi_end_as_rrt_target', True)
-        self.declare_parameter('allow_cone_fallback_target', False)
+        self.declare_parameter('allow_cone_fallback_target', True)
         
         self.declare_parameter('rrt_front_cones_dist', 12.0)
         self.declare_parameter('rrt_front_cones_extended_dist', 15.0)

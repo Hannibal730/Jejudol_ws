@@ -20,7 +20,6 @@ def generate_launch_description():
         parameters=[
             params_file,
             {'roi_end_point_topic': '/gps/f9r_roi_end_velodyne'},
-            {'roi_end_idx_topic': '/gps/roi_end_idx'},
         ],
         remappings=[
             ('/csv_path', '/gps/csv_path'),
