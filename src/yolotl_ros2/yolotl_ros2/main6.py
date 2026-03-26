@@ -1036,7 +1036,7 @@ class LaneFollowerNode(Node):
         #cv2.imshow("Original Camera View", original_with_drivable_area)
         cv2.imshow("Final Path & Logs (on BEV)", bev_im_for_drawing)
         cv2.imshow("Roboflow Detections (on BEV)", annotated_frame)
-        cv2.imshow("Arrow Masking", arrow_viz)
+        #cv2.imshow("Arrow Masking", arrow_viz)
         cv2.waitKey(1)
 
 
