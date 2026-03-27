@@ -13,10 +13,10 @@ processed_dir = Path('/home/hannibal/Jejudol_ws/data')
 # CSV 슬롯: 원하는 만큼 csv1, csv2, csv3 ... 추가해서 사용하세요.
 # 상대경로는 processed_dir 기준입니다.
 # -------------------------------------------------------------
-csv1 = 'Jeju_Map/1_5_map_easy.csv'
-csv2 = 'Jeju_Map/1_5_map_middle.csv'
-csv3 = 'Jeju_Map/1_5_map_middle2.csv'
-csv4 = 'Jeju_Map/1_5_map_hard.csv'
+csv1 = '/home/hannibal/Jejudol_ws/data/rosbag2_2026_03_26-17_52_41.csv'
+csv2 = '/home/hannibal/Jejudol_ws/data/Jeju_Map/최종)2026 국제 E-mobility 전시회_1_5 자율주행 레이싱 대회 경로.csv'
+csv3 = '/home/hannibal/Jejudol_ws/data/rosbag2_2026_03_26-17_52_41_interpolate.csv'
+# csv4 = 'Jeju_Map/1_5_map_hard.csv'
 # csv5 = 'Jeju_Map/1_5_map_easy_reverse.csv'
 # csv6 = 'Jeju_Map/1_5_map_middle2_reverse.csv'
 
@@ -91,7 +91,7 @@ def main():
         x_col, y_col = cols
         data[x_col] = pd.to_numeric(data[x_col], errors='coerce')
         data[y_col] = pd.to_numeric(data[y_col], errors='coerce')
-        data = data.dropna(subset=[x_col, y_col])
+        data = data.dropna(subset=[x_col, y_col]).reset_index(drop=True)
 
         if data.empty:
             print(f'[WARN] skip {csv_path.name}: no valid numeric rows')
@@ -113,6 +113,17 @@ def main():
             color=color,
             label=label_name,
         )
+
+        for point_idx, row in data[[x_col, y_col]].iterrows():
+            plt.annotate(
+                str(point_idx),
+                (float(row[x_col]), float(row[y_col])),
+                textcoords='offset points',
+                xytext=(4, 4),
+                fontsize=6,
+                color=color,
+                alpha=0.8,
+            )
 
         # 파일명을 경로 시작점에 텍스트로 표기
         plt.text(

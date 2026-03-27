@@ -18,9 +18,9 @@ DEFAULTS = {
     'publish_rate_hz': 30.0,
     'log_rate_hz': 1.0,
     
-    'emergency_deceleration_sec': 0.2,
+    'emergency_deceleration_sec': 0.05,
     'emergency_deceleration_target_throttle': 0.0,
-    'emergency_recovery_delay_sec': 1.5,
+    'emergency_recovery_delay_sec': 4.0,
     
     'decelerate_to_gps_sec': 0.7,
     'decelerate_to_yolotl_sec': 0.7,
@@ -43,12 +43,12 @@ DEFAULTS = {
     
     # 조향각: yolotl
     'auto_throttle_yolotl_min': 0.4,
-    'auto_throttle_yolotl_max': 0.9,
+    'auto_throttle_yolotl_max': 0.8,
     
     # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_caution_purepursuit.py'    
     'num_moon_course_threshold': 4,
     'auto_throttle_moon_course_min': 0.4,
-    'auto_throttle_moon_course_max': 0.7,
+    'auto_throttle_moon_course_max': 0.6,
     
     # 조향각: '/home/hannibal/Jejudol_ws/src/rrt_planning/src/rrt_caution_purepursuit.py'    
     'num_static_obstacle_threshold': 800,

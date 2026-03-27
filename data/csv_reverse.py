@@ -1,6 +1,6 @@
 from pathlib import Path
 
-in_path = Path("/home/hannibal/Jejudol_ws/data/rosbag2_2026_03_26-17_52_41.csv")
+in_path = Path("/home/hannibal/Jejudol_ws/data/rosbag2_2026_03_26-17_52_41_interpolate.csv")
 
 # 출력 파일명: 기존 이름 뒤에 _reverse 붙이기
 if in_path.suffix.lower() == ".csv":
